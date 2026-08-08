@@ -228,17 +228,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    const posGroups = { QB: [], RB: [], WR: [], TE: [] };
     groupedPlayersMap.forEach(p => {
-      if (posGroups[p.position]) posGroups[p.position].push(p);
-    });
-
-    Object.values(posGroups).forEach(group => {
-      group.sort((a, b) => (a.fp_overall_rank || a.sleeper_adp) - (b.fp_overall_rank || b.sleeper_adp));
-      group.forEach((p, idx) => {
-        p.fp_pos_num = idx + 1;
-        p.display_pos_rank = p.fp_pos_rank || `${p.position}${idx + 1}`;
-      });
+      p.display_pos_rank = p.fp_pos_rank || p.pos_rank || `${p.position}`;
+      p.fp_pos_num = p.fp_overall_rank || p.pos_num;
     });
   }
 
