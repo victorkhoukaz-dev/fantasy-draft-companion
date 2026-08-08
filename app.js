@@ -1,17 +1,28 @@
-// Fantasy Football Draft Companion PWA - Production App Logic
+// Fantasy Football Draft Companion PWA - Full Feature Edition
 document.addEventListener('DOMContentLoaded', () => {
   // App State
   let rawTakesData = [];
   let groupedPlayersMap = new Map(); // canonical_name -> player object
   let sleeperAdpMap = new Map(); // normalized_name -> { adp, position, team, full_name, pos_rank, pos_num }
   
-  let draftedPlayers = new Set(JSON.parse(localStorage.getItem('fp_drafted_players') || '[]'));
+  let myRosterPlayers = new Set(JSON.parse(localStorage.getItem('fp_my_roster') || '[]'));
+  let otherDraftedPlayers = new Set(JSON.parse(localStorage.getItem('fp_other_drafted') || '[]'));
+  let starredPlayers = new Set(JSON.parse(localStorage.getItem('fp_starred_players') || '[]'));
   let selectedForCompare = new Set(); // max 3 player_names
+  
   let currentPosFilter = 'ALL';
   let searchQuery = '';
   let hideDrafted = localStorage.getItem('fp_hide_drafted') === 'true';
   let viewMode = localStorage.getItem('fp_view_mode') || 'list'; // 'list' or 'card'
-  let sortBy = localStorage.getItem('fp_sort_by') || 'rank'; // 'rank', 'adp', 'stance'
+  let sortBy = localStorage.getItem('fp_sort_by') || 'adp'; // 'adp', 'pos_rank', 'stance'
+
+  // NFL Team Bye Weeks Database
+  const TEAM_BYE_WEEKS = {
+    ARI: 11, ATL: 12, BAL: 14, BUF: 12, CAR: 11, CHI: 5, CIN: 12, CLE: 10,
+    DAL: 7, DEN: 14, DET: 5, GB: 10, HOU: 14, IND: 14, JAX: 12, KC: 6,
+    LV: 10, LAC: 5, LAR: 6, MIA: 6, MIN: 6, NE: 14, NO: 12, NYG: 11,
+    NYJ: 12, PHI: 5, PIT: 9, SF: 9, SEA: 10, TB: 11, TEN: 5, WAS: 14
+  };
 
   // Common Name Aliases
   const NAME_ALIASES = {
@@ -37,9 +48,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const posChips = document.querySelectorAll('.pos-chip');
   const activeCountEl = document.getElementById('activeCount');
   const totalCountEl = document.getElementById('totalCount');
+  const starredCountEl = document.getElementById('starredCount');
+  const rosterCountBadge = document.getElementById('rosterCountBadge');
   const sleeperStatusBadge = document.getElementById('sleeperStatusBadge');
+  const myRosterBtn = document.getElementById('myRosterBtn');
 
-  // Floating Compare Bar & Modals
+  // Modals
   const compareBar = document.getElementById('compareBar');
   const selectedCompareList = document.getElementById('selectedCompareList');
   const triggerCompareBtn = document.getElementById('triggerCompareBtn');
@@ -52,10 +66,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const compareGridContent = document.getElementById('compareGridContent');
   const compareModalCloseBtn = document.getElementById('compareModalCloseBtn');
 
+  const rosterModal = document.getElementById('rosterModal');
+  const rosterGridContent = document.getElementById('rosterGridContent');
+  const rosterModalCloseBtn = document.getElementById('rosterModalCloseBtn');
+  const byeWarningArea = document.getElementById('byeWarningArea');
+  const needWarningArea = document.getElementById('needWarningArea');
+
   // Initialize UI Controls
   if (sortBySelect) sortBySelect.value = sortBy;
   updateHideDraftedButtonState();
   updateViewToggleButtonState();
+  updateHeaderCounts();
 
   // Load Sleeper Live ADP & FantasyPoints Database in Parallel
   Promise.all([
@@ -87,7 +108,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
   });
 
-  // Fetch Live Sleeper ADP & build normalized player map with positional ranks
+  // Fetch Live Sleeper ADP
   function fetchSleeperAdp() {
     return fetch('https://api.sleeper.app/v1/players/nfl')
       .then(res => {
@@ -121,7 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         if (sleeperStatusBadge) sleeperStatusBadge.textContent = 'Sleeper ADP 🟢';
-        console.log(`Loaded Sleeper ADP & Positional Ranks for ${sortedPlayers.length} players.`);
+        console.log(`Loaded Sleeper ADP for ${sortedPlayers.length} players.`);
         return sleeperAdpMap;
       })
       .catch(err => {
@@ -131,7 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
   }
 
-  // Helper: Normalize name and resolve canonical key
+  // Helper: Normalize name
   function getCanonicalNameKey(name) {
     if (!name) return '';
     let rawKey = name.toLowerCase()
@@ -203,7 +224,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    // Calculate positional rank numbers for FantasyPoints ranks if present
     const posGroups = { QB: [], RB: [], WR: [], TE: [] };
     groupedPlayersMap.forEach(p => {
       if (posGroups[p.position]) posGroups[p.position].push(p);
@@ -230,12 +250,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let playersArray = Array.from(groupedPlayersMap.values());
 
-    // Filter by Position
-    if (currentPosFilter !== 'ALL') {
+    // Position or On Deck Filter
+    if (currentPosFilter === 'DECK') {
+      playersArray = playersArray.filter(p => starredPlayers.has(p.canonical_key));
+    } else if (currentPosFilter !== 'ALL') {
       playersArray = playersArray.filter(p => p.position === currentPosFilter);
     }
 
-    // Filter by Search Query
+    // Search Query Filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       playersArray = playersArray.filter(p => {
@@ -251,14 +273,12 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // Apply Context-Aware Sorting Logic
+    // Context-Aware Sorting
     playersArray.sort((a, b) => {
       if (sortBy === 'rank') {
-        if (currentPosFilter !== 'ALL') {
-          // Position Tab selected -> Sort strictly by Positional Rank (WR1, WR2... / RB1, RB2...)
+        if (currentPosFilter !== 'ALL' && currentPosFilter !== 'DECK') {
           return (a.fp_pos_num || a.pos_num) - (b.fp_pos_num || b.pos_num);
         } else {
-          // ALL Tab selected -> Sort by Overall Rank / Sleeper ADP
           const rankA = a.fp_overall_rank || a.sleeper_adp;
           const rankB = b.fp_overall_rank || b.sleeper_adp;
           return rankA - rankB;
@@ -278,25 +298,44 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     let visibleCount = 0;
+    let currentTierBoundary = 0;
 
-    playersArray.forEach(player => {
-      const isDrafted = draftedPlayers.has(player.canonical_key);
+    playersArray.forEach((player, idx) => {
+      const isDraftedMe = myRosterPlayers.has(player.canonical_key);
+      const isDraftedOther = otherDraftedPlayers.has(player.canonical_key);
+      const isDrafted = isDraftedMe || isDraftedOther;
+
       visibleCount++;
 
+      // Feature 4: Positional Tier Divider Rows (when filtering by position)
+      if (viewMode === 'list' && currentPosFilter !== 'ALL' && currentPosFilter !== 'DECK') {
+        const playerTierGroup = Math.ceil((player.pos_num || idx + 1) / 5);
+        if (playerTierGroup !== currentTierBoundary) {
+          currentTierBoundary = playerTierGroup;
+          
+          // Count remaining undrafted in this tier
+          const remainingInTier = playersArray.slice(idx, idx + 5).filter(p => !myRosterPlayers.has(p.canonical_key) && !otherDraftedPlayers.has(p.canonical_key)).length;
+          
+          const divider = document.createElement('div');
+          divider.className = 'tier-divider-row';
+          divider.innerHTML = `
+            <span>--- ${currentPosFilter} TIER ${currentTierBoundary} ---</span>
+            ${remainingInTier <= 2 ? `<span class="tier-alert-pill">⚠️ Only ${remainingInTier} Left in Tier!</span>` : `<span style="font-size: 0.75rem; color: var(--text-muted);">${remainingInTier} Available</span>`}
+          `;
+          playerGrid.appendChild(divider);
+        }
+      }
+
       if (viewMode === 'list') {
-        const row = createCompactPlayerRow(player, isDrafted);
+        const row = createCompactPlayerRow(player, isDraftedMe, isDraftedOther);
         playerGrid.appendChild(row);
       } else {
-        const card = createPlayerCard(player, isDrafted);
+        const card = createPlayerCard(player, isDraftedMe, isDraftedOther);
         playerGrid.appendChild(card);
       }
     });
 
-    // Update Counter Stats
-    const totalPlayers = groupedPlayersMap.size;
-    const activeAvailable = totalPlayers - draftedPlayers.size;
-    totalCountEl.textContent = totalPlayers;
-    activeCountEl.textContent = activeAvailable;
+    updateHeaderCounts();
 
     if (visibleCount === 0) {
       emptyState.style.display = 'block';
@@ -308,15 +347,22 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Create High-Density Compact List Row
-  function createCompactPlayerRow(player, isDrafted) {
+  function createCompactPlayerRow(player, isDraftedMe, isDraftedOther) {
     const row = document.createElement('div');
-    row.className = `player-row ${isDrafted ? 'drafted' : ''} ${isDrafted && hideDrafted ? 'hidden' : ''}`;
+    const isDrafted = isDraftedMe || isDraftedOther;
+    
+    let draftClass = '';
+    if (isDraftedMe) draftClass = 'drafted-me';
+    else if (isDraftedOther) draftClass = 'drafted-other';
+
+    row.className = `player-row ${draftClass} ${isDrafted && hideDrafted ? 'hidden' : ''}`;
     row.setAttribute('data-player', player.canonical_key);
 
     const allStances = new Set();
     player.author_takes_map.forEach(auth => auth.stances.forEach(s => allStances.add(s)));
     const stances = Array.from(allStances);
 
+    const isStarred = starredPlayers.has(player.canonical_key);
     const topTargetStr = player.raw_takes.find(t => t.tier_or_target_round)?.tier_or_target_round || '';
     const isCheckedForCompare = selectedForCompare.has(player.canonical_key);
     
@@ -326,15 +372,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     row.innerHTML = `
       <div class="row-left">
-        <button class="btn-draft" data-player="${escapeHtml(player.canonical_key)}" onclick="event.stopPropagation();">
-          ${isDrafted ? 'Undraft' : 'Draft'}
+        <!-- Feature 2: Star Button -->
+        <button class="btn-star ${isStarred ? 'starred' : ''}" data-player="${escapeHtml(player.canonical_key)}" onclick="event.stopPropagation();" title="Pin to On Deck">
+          ${isStarred ? '⭐' : '☆'}
         </button>
+
+        <!-- Feature 3: Draft for ME vs OTHER Buttons -->
+        <div class="draft-action-group">
+          <button class="btn-draft-me ${isDraftedMe ? 'active' : ''}" data-player="${escapeHtml(player.canonical_key)}" onclick="event.stopPropagation();" title="Draft for MY Team">
+            ${isDraftedMe ? 'MINE' : 'ME'}
+          </button>
+          <button class="btn-draft-other ${isDraftedOther ? 'active' : ''}" data-player="${escapeHtml(player.canonical_key)}" onclick="event.stopPropagation();" title="Drafted by OTHER Team">
+            ${isDraftedOther ? 'TAKEN' : 'OFF'}
+          </button>
+        </div>
 
         <span class="badge-pos ${player.position}">${escapeHtml(player.display_pos_rank || player.pos_rank)}</span>
 
         <div class="row-player-info">
           <div class="row-name-line">
-            <span class="row-player-name ${isDrafted ? 'card-drafted-strike' : ''}">${escapeHtml(player.player_name)}</span>
+            <span class="row-player-name ${isDraftedOther ? 'card-drafted-strike' : ''}">${escapeHtml(player.player_name)}</span>
             <span class="team-badge">${escapeHtml(player.team)}</span>
           </div>
 
@@ -359,9 +416,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     row.addEventListener('click', () => openPlayerModal(player));
     
-    row.querySelector('.btn-draft').addEventListener('click', (e) => {
+    row.querySelector('.btn-star').addEventListener('click', (e) => {
       e.stopPropagation();
-      toggleDraftStatus(player.canonical_key);
+      toggleStarStatus(player.canonical_key);
+    });
+
+    row.querySelector('.btn-draft-me').addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleDraftForMe(player.canonical_key);
+    });
+
+    row.querySelector('.btn-draft-other').addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleDraftForOther(player.canonical_key);
     });
 
     row.querySelector('.compare-checkbox').addEventListener('change', (e) => {
@@ -373,9 +440,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Create Standard Detailed Card
-  function createPlayerCard(player, isDrafted) {
+  function createPlayerCard(player, isDraftedMe, isDraftedOther) {
     const card = document.createElement('div');
-    card.className = `player-card ${isDrafted ? 'drafted' : ''} ${isDrafted && hideDrafted ? 'hidden' : ''}`;
+    const isDrafted = isDraftedMe || isDraftedOther;
+
+    let draftClass = '';
+    if (isDraftedMe) draftClass = 'drafted-me';
+    else if (isDraftedOther) draftClass = 'drafted-other';
+
+    card.className = `player-card ${draftClass} ${isDrafted && hideDrafted ? 'hidden' : ''}`;
     card.setAttribute('data-player', player.canonical_key);
 
     const allStances = new Set();
@@ -383,6 +456,7 @@ document.addEventListener('DOMContentLoaded', () => {
     player.author_takes_map.forEach(auth => auth.stances.forEach(s => allStances.add(s)));
     const stances = Array.from(allStances);
 
+    const isStarred = starredPlayers.has(player.canonical_key);
     const topTargetStr = player.raw_takes.find(t => t.tier_or_target_round)?.tier_or_target_round || '';
     const upsideSample = player.raw_takes.find(t => t.upside_metric)?.upside_metric || player.raw_takes[0]?.key_reason || '';
     const isCheckedForCompare = selectedForCompare.has(player.canonical_key);
@@ -391,22 +465,28 @@ document.addEventListener('DOMContentLoaded', () => {
       <div>
         <div class="card-header">
           <div class="player-info-meta">
-            <span class="player-name ${isDrafted ? 'card-drafted-strike' : ''}">${escapeHtml(player.player_name)}</span>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <button class="btn-star ${isStarred ? 'starred' : ''}" onclick="event.stopPropagation();">
+                ${isStarred ? '⭐' : '☆'}
+              </button>
+              <span class="player-name ${isDraftedOther ? 'card-drafted-strike' : ''}">${escapeHtml(player.player_name)}</span>
+            </div>
             <div class="team-pos-row">
               <span class="badge-pos ${player.position}">${escapeHtml(player.display_pos_rank || player.pos_rank)}</span>
               <span class="team-name">${escapeHtml(player.team)}</span>
-              <span class="adp-tag" style="margin-left: 4px;">Sleeper ADP: #${player.sleeper_adp}</span>
+              <span class="adp-tag" style="margin-left: 4px;">Sleeper: #${player.sleeper_adp}</span>
             </div>
           </div>
           
           <div class="card-actions">
+            <div class="draft-action-group">
+              <button class="btn-draft-me ${isDraftedMe ? 'active' : ''}" onclick="event.stopPropagation();">ME</button>
+              <button class="btn-draft-other ${isDraftedOther ? 'active' : ''}" onclick="event.stopPropagation();">OFF</button>
+            </div>
             <label class="compare-checkbox-label" onclick="event.stopPropagation();">
-              <input type="checkbox" class="compare-checkbox" data-player="${escapeHtml(player.canonical_key)}" ${isCheckedForCompare ? 'checked' : ''}>
-              <span>Compare</span>
+              <input type="checkbox" class="compare-checkbox" ${isCheckedForCompare ? 'checked' : ''}>
+              <span>VS</span>
             </label>
-            <button class="btn-draft" data-player="${escapeHtml(player.canonical_key)}" onclick="event.stopPropagation();">
-              ${isDrafted ? 'Undraft' : 'Draft'}
-            </button>
           </div>
         </div>
 
@@ -431,9 +511,17 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
 
     card.addEventListener('click', () => openPlayerModal(player));
-    card.querySelector('.btn-draft').addEventListener('click', (e) => {
+    card.querySelector('.btn-star').addEventListener('click', (e) => {
       e.stopPropagation();
-      toggleDraftStatus(player.canonical_key);
+      toggleStarStatus(player.canonical_key);
+    });
+    card.querySelector('.btn-draft-me').addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleDraftForMe(player.canonical_key);
+    });
+    card.querySelector('.btn-draft-other').addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleDraftForOther(player.canonical_key);
     });
     card.querySelector('.compare-checkbox').addEventListener('change', (e) => {
       e.stopPropagation();
@@ -443,15 +531,156 @@ document.addEventListener('DOMContentLoaded', () => {
     return card;
   }
 
-  // Toggle Draft Status
-  function toggleDraftStatus(canonicalKey) {
-    if (draftedPlayers.has(canonicalKey)) {
-      draftedPlayers.delete(canonicalKey);
+  // Toggle Star / On Deck Status
+  function toggleStarStatus(canonicalKey) {
+    if (starredPlayers.has(canonicalKey)) {
+      starredPlayers.delete(canonicalKey);
     } else {
-      draftedPlayers.add(canonicalKey);
+      starredPlayers.add(canonicalKey);
     }
-    localStorage.setItem('fp_drafted_players', JSON.stringify(Array.from(draftedPlayers)));
+    localStorage.setItem('fp_starred_players', JSON.stringify(Array.from(starredPlayers)));
     renderPlayerBoard();
+  }
+
+  // Toggle Draft for ME
+  function toggleDraftForMe(canonicalKey) {
+    if (myRosterPlayers.has(canonicalKey)) {
+      myRosterPlayers.delete(canonicalKey);
+    } else {
+      myRosterPlayers.add(canonicalKey);
+      otherDraftedPlayers.delete(canonicalKey); // Mutually exclusive
+    }
+    saveDraftStates();
+    renderPlayerBoard();
+  }
+
+  // Toggle Draft for OTHER
+  function toggleDraftForOther(canonicalKey) {
+    if (otherDraftedPlayers.has(canonicalKey)) {
+      otherDraftedPlayers.delete(canonicalKey);
+    } else {
+      otherDraftedPlayers.add(canonicalKey);
+      myRosterPlayers.delete(canonicalKey); // Mutually exclusive
+    }
+    saveDraftStates();
+    renderPlayerBoard();
+  }
+
+  function saveDraftStates() {
+    localStorage.setItem('fp_my_roster', JSON.stringify(Array.from(myRosterPlayers)));
+    localStorage.setItem('fp_other_drafted', JSON.stringify(Array.from(otherDraftedPlayers)));
+  }
+
+  function updateHeaderCounts() {
+    if (starredCountEl) starredCountEl.textContent = starredPlayers.size;
+    if (rosterCountBadge) rosterCountBadge.textContent = `(${myRosterPlayers.size}/15)`;
+    
+    const totalPlayers = groupedPlayersMap.size;
+    const activeAvailable = totalPlayers - (myRosterPlayers.size + otherDraftedPlayers.size);
+    if (totalCountEl) totalCountEl.textContent = totalPlayers;
+    if (activeCountEl) activeCountEl.textContent = activeAvailable;
+  }
+
+  // Feature 3: My Roster Modal Renderer
+  function renderMyRosterModal() {
+    rosterGridContent.innerHTML = '';
+    byeWarningArea.innerHTML = '';
+    needWarningArea.innerHTML = '';
+
+    const myPlayers = Array.from(myRosterPlayers).map(k => groupedPlayersMap.get(k)).filter(Boolean);
+
+    // Track Bye Weeks
+    const byeCount = {};
+    myPlayers.forEach(p => {
+      const bye = TEAM_BYE_WEEKS[p.team];
+      if (bye) {
+        byeCount[bye] = (byeCount[bye] || 0) + 1;
+      }
+    });
+
+    const heavyByes = Object.entries(byeCount).filter(([bye, count]) => count >= 2);
+    if (heavyByes.length > 0) {
+      byeWarningArea.innerHTML = heavyByes.map(([bye, count]) => `
+        <div class="bye-warning-banner">
+          ⚠️ <strong>Bye Week Conflict:</strong> You have ${count} starters on <strong>Week ${bye} Bye</strong> (${myPlayers.filter(p => TEAM_BYE_WEEKS[p.team] == bye).map(p => p.player_name).join(', ')})
+        </div>
+      `).join('');
+    }
+
+    // Track Positional Need
+    const posCounts = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    myPlayers.forEach(p => { if (posCounts[p.position] !== undefined) posCounts[p.position]++; });
+
+    const missingNeeds = [];
+    if (posCounts.QB < 1) missingNeeds.push('QB1');
+    if (posCounts.RB < 2) missingNeeds.push(`RB${posCounts.RB + 1}`);
+    if (posCounts.WR < 2) missingNeeds.push(`WR${posCounts.WR + 1}`);
+    if (posCounts.TE < 1) missingNeeds.push('TE1');
+
+    if (missingNeeds.length > 0) {
+      needWarningArea.innerHTML = `
+        <div class="need-warning-banner">
+          🎯 <strong>Starting Roster Need:</strong> You still need ${missingNeeds.join(', ')}
+        </div>
+      `;
+    }
+
+    // Lineup Slots Setup
+    const slots = [
+      { label: 'QB1', pos: 'QB' },
+      { label: 'RB1', pos: 'RB' },
+      { label: 'RB2', pos: 'RB' },
+      { label: 'WR1', pos: 'WR' },
+      { label: 'WR2', pos: 'WR' },
+      { label: 'TE1', pos: 'TE' },
+      { label: 'FLEX 1', pos: 'FLEX' },
+      { label: 'FLEX 2', pos: 'FLEX' },
+      { label: 'BENCH 1', pos: 'BENCH' },
+      { label: 'BENCH 2', pos: 'BENCH' },
+      { label: 'BENCH 3', pos: 'BENCH' },
+      { label: 'BENCH 4', pos: 'BENCH' },
+      { label: 'BENCH 5', pos: 'BENCH' },
+      { label: 'BENCH 6', pos: 'BENCH' }
+    ];
+
+    const filledPlayers = new Set();
+
+    slots.forEach(slot => {
+      const slotCard = document.createElement('div');
+      slotCard.className = 'roster-slot-card';
+
+      let matchedPlayer = null;
+
+      if (slot.pos !== 'FLEX' && slot.pos !== 'BENCH') {
+        matchedPlayer = myPlayers.find(p => p.position === slot.pos && !filledPlayers.has(p.canonical_key));
+      } else if (slot.pos === 'FLEX') {
+        matchedPlayer = myPlayers.find(p => (p.position === 'RB' || p.position === 'WR' || p.position === 'TE') && !filledPlayers.has(p.canonical_key));
+      } else {
+        matchedPlayer = myPlayers.find(p => !filledPlayers.has(p.canonical_key));
+      }
+
+      if (matchedPlayer) {
+        filledPlayers.add(matchedPlayer.canonical_key);
+        const bye = TEAM_BYE_WEEKS[matchedPlayer.team] ? `Wk ${TEAM_BYE_WEEKS[matchedPlayer.team]}` : '';
+        slotCard.innerHTML = `
+          <div class="roster-slot-label">${slot.label}</div>
+          <div class="roster-player-name">${escapeHtml(matchedPlayer.player_name)}</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+            <span class="badge-pos ${matchedPlayer.position}">${matchedPlayer.position}</span> ${escapeHtml(matchedPlayer.team)} ${bye ? `(${bye})` : ''}
+          </div>
+        `;
+      } else {
+        slotCard.innerHTML = `
+          <div class="roster-slot-label">${slot.label}</div>
+          <div class="roster-empty-slot">Empty Slot</div>
+        `;
+      }
+
+      rosterGridContent.appendChild(slotCard);
+    });
+
+    rosterModal.classList.add('open');
+    rosterModal.setAttribute('aria-hidden', 'false');
   }
 
   // Toggle Compare Selection
@@ -469,7 +698,6 @@ document.addEventListener('DOMContentLoaded', () => {
     updateCompareFloatingBar();
   }
 
-  // Update Compare Floating Bar UI
   function updateCompareFloatingBar() {
     selectedCompareList.innerHTML = '';
     if (selectedForCompare.size > 0) {
@@ -489,9 +717,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Open Consolidated Multi-Author Consensus Modal
+  // Open Multi-Author Consensus Modal
   function openPlayerModal(player) {
-    const isDrafted = draftedPlayers.has(player.canonical_key);
+    const isDraftedMe = myRosterPlayers.has(player.canonical_key);
+    const isDraftedOther = otherDraftedPlayers.has(player.canonical_key);
     const roundEst = player.sleeper_adp < 300 ? Math.ceil(player.sleeper_adp / 12) : '-';
     const pickEst = player.sleeper_adp < 300 ? ((player.sleeper_adp - 1) % 12) + 1 : '-';
 
@@ -506,7 +735,8 @@ document.addEventListener('DOMContentLoaded', () => {
           <span class="badge-pos ${player.position}">${escapeHtml(player.display_pos_rank || player.pos_rank)}</span>
           <span class="team-name" style="font-size: 1rem;">${escapeHtml(player.team)}</span>
           <span class="adp-tag">Sleeper ADP: #${player.sleeper_adp} (Rd ${roundEst}.${pickEst})</span>
-          ${isDrafted ? '<span class="badge-stance Avoid">DRAFTED</span>' : ''}
+          ${isDraftedMe ? '<span class="badge-stance Must-Draft">MY TEAM</span>' : ''}
+          ${isDraftedOther ? '<span class="badge-stance Avoid">DRAFTED</span>' : ''}
         </div>
         <h2 class="modal-player-title">${escapeHtml(player.player_name)}</h2>
       </div>
@@ -622,7 +852,14 @@ document.addEventListener('DOMContentLoaded', () => {
     compareModal.setAttribute('aria-hidden', 'false');
   });
 
-  // Event Handlers & Helpers
+  // Modal Handlers & Helpers
+  myRosterBtn.addEventListener('click', renderMyRosterModal);
+
+  rosterModalCloseBtn.addEventListener('click', () => {
+    rosterModal.classList.remove('open');
+    rosterModal.setAttribute('aria-hidden', 'true');
+  });
+
   modalCloseBtn.addEventListener('click', () => {
     playerModal.classList.remove('open');
     playerModal.setAttribute('aria-hidden', 'true');
@@ -633,7 +870,7 @@ document.addEventListener('DOMContentLoaded', () => {
     compareModal.setAttribute('aria-hidden', 'true');
   });
 
-  [playerModal, compareModal].forEach(modal => {
+  [playerModal, compareModal, rosterModal].forEach(modal => {
     modal.addEventListener('click', (e) => {
       if (e.target === modal) {
         modal.classList.remove('open');
@@ -670,9 +907,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   resetDraftBtn.addEventListener('click', () => {
-    if (confirm('Reset all drafted player statuses?')) {
-      draftedPlayers.clear();
-      localStorage.removeItem('fp_drafted_players');
+    if (confirm('Reset all drafted player statuses & rosters?')) {
+      myRosterPlayers.clear();
+      otherDraftedPlayers.clear();
+      starredPlayers.clear();
+      localStorage.removeItem('fp_my_roster');
+      localStorage.removeItem('fp_other_drafted');
+      localStorage.removeItem('fp_starred_players');
       renderPlayerBoard();
     }
   });

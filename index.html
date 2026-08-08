@@ -23,8 +23,14 @@
         <span>🏈 FantasyPoints</span>
         <span class="brand-badge" id="sleeperStatusBadge">Sleeper ADP 🟢</span>
       </div>
-      <div class="stats-counter" id="statsCounter">
-        Pool: <span id="activeCount">0</span>/<span id="totalCount">0</span>
+
+      <div class="header-right-actions">
+        <button id="myRosterBtn" class="btn-my-roster">
+          <span>🏈 My Roster</span> <span id="rosterCountBadge">(0/15)</span>
+        </button>
+        <div class="stats-counter" id="statsCounter">
+          Pool: <span id="activeCount">0</span>/<span id="totalCount">0</span>
+        </div>
       </div>
     </div>
 
@@ -59,6 +65,7 @@
     <!-- Position Quick-Filter Chips -->
     <nav class="filter-row">
       <button class="pos-chip active" data-pos="ALL">ALL</button>
+      <button class="pos-chip" data-pos="DECK">⭐ On Deck (<span id="starredCount">0</span>)</button>
       <button class="pos-chip" data-pos="QB">QB</button>
       <button class="pos-chip" data-pos="RB">RB</button>
       <button class="pos-chip" data-pos="WR">WR</button>
@@ -78,6 +85,22 @@
       <p>Drop your downloaded FantasyPoints PDFs into <code>raw_articles/</code> and run <code>python ingest.py</code>!</p>
     </div>
   </main>
+
+  <!-- My Roster & Lineup Modal -->
+  <div id="rosterModal" class="modal-backdrop" role="dialog" aria-hidden="true">
+    <div class="modal-sheet" style="max-width: 750px;">
+      <button class="modal-close-btn" id="rosterModalCloseBtn">&times;</button>
+      <h2 style="font-size: 1.3rem; margin-bottom: 2px;">🏈 My Drafted Roster</h2>
+      <p style="font-size: 0.8rem; color: var(--text-muted);">Lineup slots, bye-week overlaps, and positional needs</p>
+      
+      <div id="byeWarningArea"></div>
+      <div id="needWarningArea"></div>
+
+      <div id="rosterGridContent" class="roster-grid">
+        <!-- Injected lineup slots -->
+      </div>
+    </div>
+  </div>
 
   <!-- Floating Head-to-Head Compare Bar -->
   <div id="compareBar" class="compare-floating-bar">
