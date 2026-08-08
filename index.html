@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#090d16">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="Fantasy Football Draft Companion PWA powered by FantasyPoints analytics & Sleeper ADP.">
+  <title>FantasyPoints Draft Companion</title>
+  
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Sticky Header Controls -->
+  <header class="header-sticky">
+    <div class="brand-row">
+      <div class="brand-title">
+        <span>🏈 FantasyPoints</span>
+        <span class="brand-badge" id="sleeperStatusBadge">Sleeper ADP 🟢</span>
+      </div>
+      <div class="stats-counter" id="statsCounter">
+        Pool: <span id="activeCount">0</span>/<span id="totalCount">0</span>
+      </div>
+    </div>
+
+    <!-- Search & Controls Bar -->
+    <div class="search-row">
+      <div class="search-input-wrapper">
+        <svg class="search-icon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+        </svg>
+        <input type="text" id="searchInput" class="search-input" placeholder="Search player, team, author, stance..." autocomplete="off">
+      </div>
+      
+      <select id="sortBySelect" class="select-control" title="Sort Board">
+        <option value="adp">Sort: Sleeper ADP</option>
+        <option value="pos_rank">Sort: Positional Rank (RB1, WR1...)</option>
+        <option value="stance">Sort: 🔥 Stance (Must-Draft First)</option>
+      </select>
+
+      <button id="viewToggleBtn" class="toggle-btn" title="Toggle List / Card View">
+        <span>📋 List</span>
+      </button>
+
+      <button id="hideDraftedBtn" class="toggle-btn" title="Toggle Hiding Drafted Players">
+        <span>🚫 Hide</span>
+      </button>
+      
+      <button id="resetDraftBtn" class="toggle-btn" title="Reset Draft Status">
+        <span>🔄</span>
+      </button>
+    </div>
+
+    <!-- Position Quick-Filter Chips -->
+    <nav class="filter-row">
+      <button class="pos-chip active" data-pos="ALL">ALL</button>
+      <button class="pos-chip" data-pos="QB">QB</button>
+      <button class="pos-chip" data-pos="RB">RB</button>
+      <button class="pos-chip" data-pos="WR">WR</button>
+      <button class="pos-chip" data-pos="TE">TE</button>
+    </nav>
+  </header>
+
+  <!-- Player Board Container -->
+  <main class="container">
+    <div id="playerGrid" class="player-list-view">
+      <!-- Player compact rows or cards injected by app.js -->
+    </div>
+
+    <div id="emptyState" class="empty-state" style="display: none;">
+      <div class="empty-icon">🏈</div>
+      <h3>No player articles loaded yet</h3>
+      <p>Drop your downloaded FantasyPoints PDFs into <code>raw_articles/</code> and run <code>python ingest.py</code>!</p>
+    </div>
+  </main>
+
+  <!-- Floating Head-to-Head Compare Bar -->
+  <div id="compareBar" class="compare-floating-bar">
+    <div class="compare-selected-names" id="selectedCompareList">
+      <!-- Selected player chips -->
+    </div>
+    <button id="triggerCompareBtn" class="btn-trigger-compare">
+      Compare (0)
+    </button>
+  </div>
+
+  <!-- Player Deep Dive Modal -->
+  <div id="playerModal" class="modal-backdrop" role="dialog" aria-hidden="true">
+    <div class="modal-sheet">
+      <button class="modal-close-btn" id="modalCloseBtn">&times;</button>
+      <div id="modalContent">
+        <!-- Injected player consensus details -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Head-to-Head Comparison Modal -->
+  <div id="compareModal" class="modal-backdrop" role="dialog" aria-hidden="true">
+    <div class="modal-sheet" style="max-width: 900px;">
+      <button class="modal-close-btn" id="compareModalCloseBtn">&times;</button>
+      <h2 style="font-size: 1.3rem; margin-bottom: 2px;">⚡ Head-to-Head Comparison</h2>
+      <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px;">Side-by-side FantasyPoints analyst stance breakdown</p>
+      <div id="compareGridContent" class="compare-grid">
+        <!-- Injected side-by-side player columns -->
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

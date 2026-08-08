@@ -1,0 +1,16 @@
+# Secrets & Environment
+.env
+
+# Python Bytecode & Cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# User raw PDF files (keep directory via .gitkeep)
+raw_articles/*.pdf
+!raw_articles/.gitkeep
+
+# IDE & OS files
+.vscode/
+.DS_Store
+Thumbs.db
