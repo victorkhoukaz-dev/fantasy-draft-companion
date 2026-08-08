@@ -25,7 +25,7 @@
       </div>
 
       <div class="header-right-actions">
-        <button id="myRosterBtn" class="btn-my-roster">
+        <button id="toggleRosterSidebarBtn" class="btn-toggle-sidebar" title="Toggle My Roster Sidebar">
           <span>🏈 My Roster</span> <span id="rosterCountBadge">(0/15)</span>
         </button>
         <div class="stats-counter" id="statsCounter">
@@ -73,33 +73,37 @@
     </nav>
   </header>
 
-  <!-- Player Board Container -->
-  <main class="container">
-    <div id="playerGrid" class="player-list-view">
-      <!-- Player compact rows or cards injected by app.js -->
-    </div>
+  <!-- App Main Split Layout -->
+  <div class="app-layout">
+    <!-- Left Main Board -->
+    <main class="board-area">
+      <div id="playerGrid" class="player-list-view">
+        <!-- Player compact rows or cards injected by app.js -->
+      </div>
 
-    <div id="emptyState" class="empty-state" style="display: none;">
-      <div class="empty-icon">🏈</div>
-      <h3>No player articles loaded yet</h3>
-      <p>Drop your downloaded FantasyPoints PDFs into <code>raw_articles/</code> and run <code>python ingest.py</code>!</p>
-    </div>
-  </main>
+      <div id="emptyState" class="empty-state" style="display: none;">
+        <div class="empty-icon">🏈</div>
+        <h3>No player articles loaded yet</h3>
+        <p>Drop your downloaded FantasyPoints PDFs into <code>raw_articles/</code> and run <code>python ingest.py</code>!</p>
+      </div>
+    </main>
 
-  <!-- My Roster & Lineup Modal -->
-  <div id="rosterModal" class="modal-backdrop" role="dialog" aria-hidden="true">
-    <div class="modal-sheet" style="max-width: 750px;">
-      <button class="modal-close-btn" id="rosterModalCloseBtn">&times;</button>
-      <h2 style="font-size: 1.3rem; margin-bottom: 2px;">🏈 My Drafted Roster</h2>
-      <p style="font-size: 0.8rem; color: var(--text-muted);">Lineup slots, bye-week overlaps, and positional needs</p>
-      
+    <!-- Right Persistent & Minimizable Roster Sidebar -->
+    <aside id="rosterSidebar" class="roster-sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title">
+          <span>🏈 My Roster</span>
+        </div>
+        <button id="closeSidebarBtn" class="btn-minimize-sidebar" title="Minimize Sidebar">&times;</button>
+      </div>
+
       <div id="byeWarningArea"></div>
       <div id="needWarningArea"></div>
 
-      <div id="rosterGridContent" class="roster-grid">
+      <div id="sidebarRosterList" class="sidebar-roster-list">
         <!-- Injected lineup slots -->
       </div>
-    </div>
+    </aside>
   </div>
 
   <!-- Floating Head-to-Head Compare Bar -->

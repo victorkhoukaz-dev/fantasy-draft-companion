@@ -1,4 +1,4 @@
-// Fantasy Football Draft Companion PWA - Full Feature Edition
+// Fantasy Football Draft Companion PWA - Production Edition
 document.addEventListener('DOMContentLoaded', () => {
   // App State
   let rawTakesData = [];
@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let hideDrafted = localStorage.getItem('fp_hide_drafted') === 'true';
   let viewMode = localStorage.getItem('fp_view_mode') || 'list'; // 'list' or 'card'
   let sortBy = localStorage.getItem('fp_sort_by') || 'adp'; // 'adp', 'pos_rank', 'stance'
+  let isSidebarCollapsed = localStorage.getItem('fp_sidebar_collapsed') === 'true';
 
   // NFL Team Bye Weeks Database
   const TEAM_BYE_WEEKS = {
@@ -51,7 +52,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const starredCountEl = document.getElementById('starredCount');
   const rosterCountBadge = document.getElementById('rosterCountBadge');
   const sleeperStatusBadge = document.getElementById('sleeperStatusBadge');
-  const myRosterBtn = document.getElementById('myRosterBtn');
+  
+  // Right Sidebar Elements
+  const rosterSidebar = document.getElementById('rosterSidebar');
+  const toggleRosterSidebarBtn = document.getElementById('toggleRosterSidebarBtn');
+  const closeSidebarBtn = document.getElementById('closeSidebarBtn');
+  const sidebarRosterList = document.getElementById('sidebarRosterList');
+  const byeWarningArea = document.getElementById('byeWarningArea');
+  const needWarningArea = document.getElementById('needWarningArea');
 
   // Modals
   const compareBar = document.getElementById('compareBar');
@@ -66,16 +74,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const compareGridContent = document.getElementById('compareGridContent');
   const compareModalCloseBtn = document.getElementById('compareModalCloseBtn');
 
-  const rosterModal = document.getElementById('rosterModal');
-  const rosterGridContent = document.getElementById('rosterGridContent');
-  const rosterModalCloseBtn = document.getElementById('rosterModalCloseBtn');
-  const byeWarningArea = document.getElementById('byeWarningArea');
-  const needWarningArea = document.getElementById('needWarningArea');
-
   // Initialize UI Controls
   if (sortBySelect) sortBySelect.value = sortBy;
   updateHideDraftedButtonState();
   updateViewToggleButtonState();
+  updateSidebarVisibility();
   updateHeaderCounts();
 
   // Load Sleeper Live ADP & FantasyPoints Database in Parallel
@@ -238,7 +241,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Render Player Board
+  // Render Player Board & Sidebar Panel
   function renderPlayerBoard() {
     playerGrid.innerHTML = '';
     
@@ -307,20 +310,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
       visibleCount++;
 
-      // Feature 4: Positional Tier Divider Rows (when filtering by position)
+      // Positional Tier Divider Rows
       if (viewMode === 'list' && currentPosFilter !== 'ALL' && currentPosFilter !== 'DECK') {
         const playerTierGroup = Math.ceil((player.pos_num || idx + 1) / 5);
         if (playerTierGroup !== currentTierBoundary) {
           currentTierBoundary = playerTierGroup;
           
-          // Count remaining undrafted in this tier
           const remainingInTier = playersArray.slice(idx, idx + 5).filter(p => !myRosterPlayers.has(p.canonical_key) && !otherDraftedPlayers.has(p.canonical_key)).length;
           
           const divider = document.createElement('div');
           divider.className = 'tier-divider-row';
           divider.innerHTML = `
             <span>--- ${currentPosFilter} TIER ${currentTierBoundary} ---</span>
-            ${remainingInTier <= 2 ? `<span class="tier-alert-pill">⚠️ Only ${remainingInTier} Left in Tier!</span>` : `<span style="font-size: 0.75rem; color: var(--text-muted);">${remainingInTier} Available</span>`}
+            ${remainingInTier <= 2 ? `<span class="tier-alert-pill">⚠️ Only ${remainingInTier} Left!</span>` : `<span style="font-size: 0.75rem; color: var(--text-muted);">${remainingInTier} Available</span>`}
           `;
           playerGrid.appendChild(divider);
         }
@@ -335,6 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
+    renderRosterSidebarContent();
     updateHeaderCounts();
 
     if (visibleCount === 0) {
@@ -346,7 +349,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateCompareFloatingBar();
   }
 
-  // Create High-Density Compact List Row
+  // Create Compact Row
   function createCompactPlayerRow(player, isDraftedMe, isDraftedOther) {
     const row = document.createElement('div');
     const isDrafted = isDraftedMe || isDraftedOther;
@@ -372,12 +375,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     row.innerHTML = `
       <div class="row-left">
-        <!-- Feature 2: Star Button -->
         <button class="btn-star ${isStarred ? 'starred' : ''}" data-player="${escapeHtml(player.canonical_key)}" onclick="event.stopPropagation();" title="Pin to On Deck">
           ${isStarred ? '⭐' : '☆'}
         </button>
 
-        <!-- Feature 3: Draft for ME vs OTHER Buttons -->
         <div class="draft-action-group">
           <button class="btn-draft-me ${isDraftedMe ? 'active' : ''}" data-player="${escapeHtml(player.canonical_key)}" onclick="event.stopPropagation();" title="Draft for MY Team">
             ${isDraftedMe ? 'MINE' : 'ME'}
@@ -531,6 +532,126 @@ document.addEventListener('DOMContentLoaded', () => {
     return card;
   }
 
+  // Render Content inside Right Roster Sidebar Panel
+  function renderRosterSidebarContent() {
+    if (!sidebarRosterList) return;
+    sidebarRosterList.innerHTML = '';
+    byeWarningArea.innerHTML = '';
+    needWarningArea.innerHTML = '';
+
+    const myPlayers = Array.from(myRosterPlayers).map(k => groupedPlayersMap.get(k)).filter(Boolean);
+
+    // Bye Week Conflicts
+    const byeCount = {};
+    myPlayers.forEach(p => {
+      const bye = TEAM_BYE_WEEKS[p.team];
+      if (bye) byeCount[bye] = (byeCount[bye] || 0) + 1;
+    });
+
+    const heavyByes = Object.entries(byeCount).filter(([bye, count]) => count >= 2);
+    if (heavyByes.length > 0) {
+      byeWarningArea.innerHTML = heavyByes.map(([bye, count]) => `
+        <div class="bye-warning-banner">
+          ⚠️ <strong>Bye Conflict:</strong> ${count} starters on <strong>Wk ${bye} Bye</strong>
+        </div>
+      `).join('');
+    }
+
+    // Positional Needs
+    const posCounts = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    myPlayers.forEach(p => { if (posCounts[p.position] !== undefined) posCounts[p.position]++; });
+
+    const missingNeeds = [];
+    if (posCounts.QB < 1) missingNeeds.push('QB1');
+    if (posCounts.RB < 2) missingNeeds.push(`RB${posCounts.RB + 1}`);
+    if (posCounts.WR < 2) missingNeeds.push(`WR${posCounts.WR + 1}`);
+    if (posCounts.TE < 1) missingNeeds.push('TE1');
+
+    if (missingNeeds.length > 0) {
+      needWarningArea.innerHTML = `
+        <div class="need-warning-banner">
+          🎯 <strong>Need:</strong> ${missingNeeds.join(', ')}
+        </div>
+      `;
+    }
+
+    // Roster Slot Layout
+    const slots = [
+      { label: 'QB1', pos: 'QB' },
+      { label: 'RB1', pos: 'RB' },
+      { label: 'RB2', pos: 'RB' },
+      { label: 'WR1', pos: 'WR' },
+      { label: 'WR2', pos: 'WR' },
+      { label: 'TE1', pos: 'TE' },
+      { label: 'FLEX1', pos: 'FLEX' },
+      { label: 'FLEX2', pos: 'FLEX' },
+      { label: 'BN1', pos: 'BENCH' },
+      { label: 'BN2', pos: 'BENCH' },
+      { label: 'BN3', pos: 'BENCH' },
+      { label: 'BN4', pos: 'BENCH' },
+      { label: 'BN5', pos: 'BENCH' }
+    ];
+
+    const filledPlayers = new Set();
+
+    slots.forEach(slot => {
+      const row = document.createElement('div');
+      row.className = 'sidebar-slot-row';
+
+      let matchedPlayer = null;
+
+      if (slot.pos !== 'FLEX' && slot.pos !== 'BENCH') {
+        matchedPlayer = myPlayers.find(p => p.position === slot.pos && !filledPlayers.has(p.canonical_key));
+      } else if (slot.pos === 'FLEX') {
+        matchedPlayer = myPlayers.find(p => (p.position === 'RB' || p.position === 'WR' || p.position === 'TE') && !filledPlayers.has(p.canonical_key));
+      } else {
+        matchedPlayer = myPlayers.find(p => !filledPlayers.has(p.canonical_key));
+      }
+
+      if (matchedPlayer) {
+        filledPlayers.add(matchedPlayer.canonical_key);
+        const bye = TEAM_BYE_WEEKS[matchedPlayer.team] ? `Wk ${TEAM_BYE_WEEKS[matchedPlayer.team]}` : '';
+        row.innerHTML = `
+          <span class="sidebar-slot-label">${slot.label}</span>
+          <span class="sidebar-slot-player">${escapeHtml(matchedPlayer.player_name)}</span>
+          <span class="badge-pos ${matchedPlayer.position}">${matchedPlayer.position}</span>
+        `;
+      } else {
+        row.innerHTML = `
+          <span class="sidebar-slot-label">${slot.label}</span>
+          <span class="sidebar-empty-slot">Empty</span>
+        `;
+      }
+
+      sidebarRosterList.appendChild(row);
+    });
+  }
+
+  // Sidebar Visibility Toggle Handler
+  function updateSidebarVisibility() {
+    if (isSidebarCollapsed) {
+      rosterSidebar.classList.add('collapsed');
+      toggleRosterSidebarBtn.classList.remove('active');
+    } else {
+      rosterSidebar.classList.remove('collapsed');
+      toggleRosterSidebarBtn.classList.add('active');
+    }
+  }
+
+  toggleRosterSidebarBtn.addEventListener('click', () => {
+    isSidebarCollapsed = !isSidebarCollapsed;
+    localStorage.setItem('fp_sidebar_collapsed', isSidebarCollapsed ? 'true' : 'false');
+    updateSidebarVisibility();
+  });
+
+  if (closeSidebarBtn) {
+    closeSidebarBtn.addEventListener('click', () => {
+      isSidebarCollapsed = true;
+      localStorage.setItem('fp_sidebar_collapsed', 'true');
+      updateSidebarVisibility();
+    });
+  }
+
   // Toggle Star / On Deck Status
   function toggleStarStatus(canonicalKey) {
     if (starredPlayers.has(canonicalKey)) {
@@ -548,7 +669,7 @@ document.addEventListener('DOMContentLoaded', () => {
       myRosterPlayers.delete(canonicalKey);
     } else {
       myRosterPlayers.add(canonicalKey);
-      otherDraftedPlayers.delete(canonicalKey); // Mutually exclusive
+      otherDraftedPlayers.delete(canonicalKey);
     }
     saveDraftStates();
     renderPlayerBoard();
@@ -560,7 +681,7 @@ document.addEventListener('DOMContentLoaded', () => {
       otherDraftedPlayers.delete(canonicalKey);
     } else {
       otherDraftedPlayers.add(canonicalKey);
-      myRosterPlayers.delete(canonicalKey); // Mutually exclusive
+      myRosterPlayers.delete(canonicalKey);
     }
     saveDraftStates();
     renderPlayerBoard();
@@ -579,108 +700,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const activeAvailable = totalPlayers - (myRosterPlayers.size + otherDraftedPlayers.size);
     if (totalCountEl) totalCountEl.textContent = totalPlayers;
     if (activeCountEl) activeCountEl.textContent = activeAvailable;
-  }
-
-  // Feature 3: My Roster Modal Renderer
-  function renderMyRosterModal() {
-    rosterGridContent.innerHTML = '';
-    byeWarningArea.innerHTML = '';
-    needWarningArea.innerHTML = '';
-
-    const myPlayers = Array.from(myRosterPlayers).map(k => groupedPlayersMap.get(k)).filter(Boolean);
-
-    // Track Bye Weeks
-    const byeCount = {};
-    myPlayers.forEach(p => {
-      const bye = TEAM_BYE_WEEKS[p.team];
-      if (bye) {
-        byeCount[bye] = (byeCount[bye] || 0) + 1;
-      }
-    });
-
-    const heavyByes = Object.entries(byeCount).filter(([bye, count]) => count >= 2);
-    if (heavyByes.length > 0) {
-      byeWarningArea.innerHTML = heavyByes.map(([bye, count]) => `
-        <div class="bye-warning-banner">
-          ⚠️ <strong>Bye Week Conflict:</strong> You have ${count} starters on <strong>Week ${bye} Bye</strong> (${myPlayers.filter(p => TEAM_BYE_WEEKS[p.team] == bye).map(p => p.player_name).join(', ')})
-        </div>
-      `).join('');
-    }
-
-    // Track Positional Need
-    const posCounts = { QB: 0, RB: 0, WR: 0, TE: 0 };
-    myPlayers.forEach(p => { if (posCounts[p.position] !== undefined) posCounts[p.position]++; });
-
-    const missingNeeds = [];
-    if (posCounts.QB < 1) missingNeeds.push('QB1');
-    if (posCounts.RB < 2) missingNeeds.push(`RB${posCounts.RB + 1}`);
-    if (posCounts.WR < 2) missingNeeds.push(`WR${posCounts.WR + 1}`);
-    if (posCounts.TE < 1) missingNeeds.push('TE1');
-
-    if (missingNeeds.length > 0) {
-      needWarningArea.innerHTML = `
-        <div class="need-warning-banner">
-          🎯 <strong>Starting Roster Need:</strong> You still need ${missingNeeds.join(', ')}
-        </div>
-      `;
-    }
-
-    // Lineup Slots Setup
-    const slots = [
-      { label: 'QB1', pos: 'QB' },
-      { label: 'RB1', pos: 'RB' },
-      { label: 'RB2', pos: 'RB' },
-      { label: 'WR1', pos: 'WR' },
-      { label: 'WR2', pos: 'WR' },
-      { label: 'TE1', pos: 'TE' },
-      { label: 'FLEX 1', pos: 'FLEX' },
-      { label: 'FLEX 2', pos: 'FLEX' },
-      { label: 'BENCH 1', pos: 'BENCH' },
-      { label: 'BENCH 2', pos: 'BENCH' },
-      { label: 'BENCH 3', pos: 'BENCH' },
-      { label: 'BENCH 4', pos: 'BENCH' },
-      { label: 'BENCH 5', pos: 'BENCH' },
-      { label: 'BENCH 6', pos: 'BENCH' }
-    ];
-
-    const filledPlayers = new Set();
-
-    slots.forEach(slot => {
-      const slotCard = document.createElement('div');
-      slotCard.className = 'roster-slot-card';
-
-      let matchedPlayer = null;
-
-      if (slot.pos !== 'FLEX' && slot.pos !== 'BENCH') {
-        matchedPlayer = myPlayers.find(p => p.position === slot.pos && !filledPlayers.has(p.canonical_key));
-      } else if (slot.pos === 'FLEX') {
-        matchedPlayer = myPlayers.find(p => (p.position === 'RB' || p.position === 'WR' || p.position === 'TE') && !filledPlayers.has(p.canonical_key));
-      } else {
-        matchedPlayer = myPlayers.find(p => !filledPlayers.has(p.canonical_key));
-      }
-
-      if (matchedPlayer) {
-        filledPlayers.add(matchedPlayer.canonical_key);
-        const bye = TEAM_BYE_WEEKS[matchedPlayer.team] ? `Wk ${TEAM_BYE_WEEKS[matchedPlayer.team]}` : '';
-        slotCard.innerHTML = `
-          <div class="roster-slot-label">${slot.label}</div>
-          <div class="roster-player-name">${escapeHtml(matchedPlayer.player_name)}</div>
-          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
-            <span class="badge-pos ${matchedPlayer.position}">${matchedPlayer.position}</span> ${escapeHtml(matchedPlayer.team)} ${bye ? `(${bye})` : ''}
-          </div>
-        `;
-      } else {
-        slotCard.innerHTML = `
-          <div class="roster-slot-label">${slot.label}</div>
-          <div class="roster-empty-slot">Empty Slot</div>
-        `;
-      }
-
-      rosterGridContent.appendChild(slotCard);
-    });
-
-    rosterModal.classList.add('open');
-    rosterModal.setAttribute('aria-hidden', 'false');
   }
 
   // Toggle Compare Selection
@@ -717,7 +736,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Open Multi-Author Consensus Modal
+  // Open Consolidated Multi-Author Consensus Modal
   function openPlayerModal(player) {
     const isDraftedMe = myRosterPlayers.has(player.canonical_key);
     const isDraftedOther = otherDraftedPlayers.has(player.canonical_key);
@@ -853,13 +872,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Modal Handlers & Helpers
-  myRosterBtn.addEventListener('click', renderMyRosterModal);
-
-  rosterModalCloseBtn.addEventListener('click', () => {
-    rosterModal.classList.remove('open');
-    rosterModal.setAttribute('aria-hidden', 'true');
-  });
-
   modalCloseBtn.addEventListener('click', () => {
     playerModal.classList.remove('open');
     playerModal.setAttribute('aria-hidden', 'true');
@@ -870,7 +882,7 @@ document.addEventListener('DOMContentLoaded', () => {
     compareModal.setAttribute('aria-hidden', 'true');
   });
 
-  [playerModal, compareModal, rosterModal].forEach(modal => {
+  [playerModal, compareModal].forEach(modal => {
     modal.addEventListener('click', (e) => {
       if (e.target === modal) {
         modal.classList.remove('open');
