@@ -49,9 +49,11 @@
         <option value="stance">Sort: 🔥 Stance (Must-Draft First)</option>
       </select>
 
-      <button id="viewToggleBtn" class="toggle-btn" title="Toggle List / Card View">
-        <span>📋 List</span>
-      </button>
+      <!-- Clear Segmented View Switcher -->
+      <div class="view-switch-group">
+        <button id="viewListBtn" class="view-switch-btn active" title="Switch to Compact Lines View">📋 Lines</button>
+        <button id="viewCardBtn" class="view-switch-btn" title="Switch to Detailed Cards View">🃏 Cards</button>
+      </div>
 
       <button id="hideDraftedBtn" class="toggle-btn" title="Toggle Hiding Drafted Players">
         <span>🚫 Hide</span>
@@ -119,7 +121,7 @@
   <!-- Player Deep Dive Modal -->
   <div id="playerModal" class="modal-backdrop" role="dialog" aria-hidden="true">
     <div class="modal-sheet">
-      <button class="modal-close-btn" id="modalCloseBtn">&times;</button>
+      <button class="modal-close-btn" id="modalCloseBtn" title="Close (ESC)">&times;</button>
       <div id="modalContent">
         <!-- Injected player consensus details -->
       </div>
@@ -129,7 +131,7 @@
   <!-- Head-to-Head Comparison Modal -->
   <div id="compareModal" class="modal-backdrop" role="dialog" aria-hidden="true">
     <div class="modal-sheet" style="max-width: 900px;">
-      <button class="modal-close-btn" id="compareModalCloseBtn">&times;</button>
+      <button class="modal-close-btn" id="compareModalCloseBtn" title="Close (ESC)">&times;</button>
       <h2 style="font-size: 1.3rem; margin-bottom: 2px;">⚡ Head-to-Head Comparison</h2>
       <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px;">Side-by-side FantasyPoints analyst stance breakdown</p>
       <div id="compareGridContent" class="compare-grid">

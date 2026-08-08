@@ -43,7 +43,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const emptyState = document.getElementById('emptyState');
   const searchInput = document.getElementById('searchInput');
   const sortBySelect = document.getElementById('sortBySelect');
-  const viewToggleBtn = document.getElementById('viewToggleBtn');
+  const viewListBtn = document.getElementById('viewListBtn');
+  const viewCardBtn = document.getElementById('viewCardBtn');
   const hideDraftedBtn = document.getElementById('hideDraftedBtn');
   const resetDraftBtn = document.getElementById('resetDraftBtn');
   const posChips = document.querySelectorAll('.pos-chip');
@@ -303,6 +304,16 @@ document.addEventListener('DOMContentLoaded', () => {
     let visibleCount = 0;
     let currentTierBoundary = 0;
 
+    // Pre-calculate exact count of available players per tier group for accuracy
+    const tierGroupsMap = new Map(); // tierGroupNum -> array of players belonging to this tier
+    if (currentPosFilter !== 'ALL' && currentPosFilter !== 'DECK') {
+      playersArray.forEach((p, idx) => {
+        const tierNum = Math.ceil((idx + 1) / 5);
+        if (!tierGroupsMap.has(tierNum)) tierGroupsMap.set(tierNum, []);
+        tierGroupsMap.get(tierNum).push(p);
+      });
+    }
+
     playersArray.forEach((player, idx) => {
       const isDraftedMe = myRosterPlayers.has(player.canonical_key);
       const isDraftedOther = otherDraftedPlayers.has(player.canonical_key);
@@ -310,19 +321,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
       visibleCount++;
 
-      // Positional Tier Divider Rows
+      // Fix 1: Exact Positional Tier Divider Rows
       if (viewMode === 'list' && currentPosFilter !== 'ALL' && currentPosFilter !== 'DECK') {
-        const playerTierGroup = Math.ceil((player.pos_num || idx + 1) / 5);
+        const playerTierGroup = Math.ceil((idx + 1) / 5);
         if (playerTierGroup !== currentTierBoundary) {
           currentTierBoundary = playerTierGroup;
           
-          const remainingInTier = playersArray.slice(idx, idx + 5).filter(p => !myRosterPlayers.has(p.canonical_key) && !otherDraftedPlayers.has(p.canonical_key)).length;
-          
+          const tierPlayersList = tierGroupsMap.get(currentTierBoundary) || [];
+          const remainingInTier = tierPlayersList.filter(p => !myRosterPlayers.has(p.canonical_key) && !otherDraftedPlayers.has(p.canonical_key)).length;
+          const totalInTier = tierPlayersList.length;
+
           const divider = document.createElement('div');
           divider.className = 'tier-divider-row';
           divider.innerHTML = `
             <span>--- ${currentPosFilter} TIER ${currentTierBoundary} ---</span>
-            ${remainingInTier <= 2 ? `<span class="tier-alert-pill">⚠️ Only ${remainingInTier} Left!</span>` : `<span style="font-size: 0.75rem; color: var(--text-muted);">${remainingInTier} Available</span>`}
+            ${remainingInTier <= 2 ? `<span class="tier-alert-pill">⚠️ Only ${remainingInTier} Left!</span>` : `<span style="font-size: 0.75rem; color: var(--text-muted);">${remainingInTier} / ${totalInTier} Available</span>`}
           `;
           playerGrid.appendChild(divider);
         }
@@ -362,6 +375,7 @@ document.addEventListener('DOMContentLoaded', () => {
     row.setAttribute('data-player', player.canonical_key);
 
     const allStances = new Set();
+    const authors = Array.from(player.author_takes_map.keys());
     player.author_takes_map.forEach(auth => auth.stances.forEach(s => allStances.add(s)));
     const stances = Array.from(allStances);
 
@@ -398,6 +412,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
           <div class="row-sub-line">
             <span class="adp-tag">Sleeper: ${adpDisplay}</span>
+            <!-- Fix 2: Display Author Approval Tag -->
+            <span class="author-approval-tag">✍️ ${authors.join(', ')}</span>
             ${topTargetStr ? `<span class="tier-tag">🎯 ${escapeHtml(topTargetStr)}</span>` : ''}
           </div>
         </div>
@@ -507,7 +523,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       <div class="author-avatars" style="margin-top: 10px;">
         <div class="author-avatar-dot">${authors.length}</div>
-        <span>${authors.join(', ')} (${player.raw_takes.length} takes)</span>
+        <span>✍️ Approved by ${authors.join(', ')} (${player.raw_takes.length} takes)</span>
       </div>
     `;
 
@@ -882,6 +898,16 @@ document.addEventListener('DOMContentLoaded', () => {
     compareModal.setAttribute('aria-hidden', 'true');
   });
 
+  // Fix 3: Global ESC Key Listener to Close Modals
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' || e.keyCode === 27) {
+      playerModal.classList.remove('open');
+      playerModal.setAttribute('aria-hidden', 'true');
+      compareModal.classList.remove('open');
+      compareModal.setAttribute('aria-hidden', 'true');
+    }
+  });
+
   [playerModal, compareModal].forEach(modal => {
     modal.addEventListener('click', (e) => {
       if (e.target === modal) {
@@ -904,12 +930,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  viewToggleBtn.addEventListener('click', () => {
-    viewMode = viewMode === 'list' ? 'card' : 'list';
-    localStorage.setItem('fp_view_mode', viewMode);
-    updateViewToggleButtonState();
-    renderPlayerBoard();
-  });
+  // Fix 4: Clear Segmented View Switch Button Handlers
+  if (viewListBtn && viewCardBtn) {
+    viewListBtn.addEventListener('click', () => {
+      viewMode = 'list';
+      localStorage.setItem('fp_view_mode', 'list');
+      updateViewToggleButtonState();
+      renderPlayerBoard();
+    });
+
+    viewCardBtn.addEventListener('click', () => {
+      viewMode = 'card';
+      localStorage.setItem('fp_view_mode', 'card');
+      updateViewToggleButtonState();
+      renderPlayerBoard();
+    });
+  }
 
   hideDraftedBtn.addEventListener('click', () => {
     hideDrafted = !hideDrafted;
@@ -948,10 +984,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateViewToggleButtonState() {
-    if (viewMode === 'list') {
-      viewToggleBtn.querySelector('span').textContent = '📋 List';
-    } else {
-      viewToggleBtn.querySelector('span').textContent = '🃏 Card';
+    if (viewListBtn && viewCardBtn) {
+      if (viewMode === 'list') {
+        viewListBtn.classList.add('active');
+        viewCardBtn.classList.remove('active');
+      } else {
+        viewCardBtn.classList.add('active');
+        viewListBtn.classList.remove('active');
+      }
     }
   }
 
