@@ -415,6 +415,70 @@ document.addEventListener('DOMContentLoaded', () => {
     return `#${rounded} (Rd ${round}.${pickInRound})`;
   }
 
+  // Helper: Evaluate Global Analyst Consensus & Conflicts
+  function evaluatePlayerConsensus(player) {
+    const allStances = [];
+    player.author_takes_map.forEach(auth => auth.stances.forEach(s => allStances.push(s)));
+    
+    if (allStances.length === 0) return { type: 'NONE', label: '', modalTitle: '', icon: '', class: '', boxStyle: '', titleColor: '' };
+
+    const positiveSet = new Set(['Exodia', 'Hansen 50', 'Hansen-50', 'Must-Draft', 'Bullish', 'Breakout', 'Sleeper']);
+    const negativeSet = new Set(['Dirty Thirty', 'Dirty-Thirty', 'Avoid', 'Bearish']);
+
+    let hasPositive = false;
+    let hasNegative = false;
+
+    allStances.forEach(s => {
+      if (positiveSet.has(s)) hasPositive = true;
+      if (negativeSet.has(s)) hasNegative = true;
+    });
+
+    if (hasPositive && hasNegative) {
+      return {
+        type: 'SPLIT',
+        label: '⚠️ Split',
+        modalTitle: '⚠️ ANALYST DISAGREEMENT',
+        icon: '⚠️',
+        class: 'Split',
+        boxStyle: 'background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.5); box-shadow: 0 0 15px rgba(245, 158, 11, 0.2);',
+        titleColor: '#fde68a'
+      };
+    } else if (hasNegative && !hasPositive) {
+      return {
+        type: 'FADE',
+        label: '🛑 Fade Consensus',
+        modalTitle: '🛑 UNANIMOUS FADE',
+        icon: '🛑',
+        class: 'FadeConsensus',
+        boxStyle: 'background: rgba(244, 63, 94, 0.15); border: 1px solid rgba(244, 63, 94, 0.5); box-shadow: 0 0 15px rgba(244, 63, 94, 0.2);',
+        titleColor: '#fecdd3'
+      };
+    } else {
+      return {
+        type: 'BULLISH',
+        label: '📈 Consensus',
+        modalTitle: '🟢 UNANIMOUS CONSENSUS',
+        icon: '🟢',
+        class: 'Consensus',
+        boxStyle: 'background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(56, 189, 248, 0.15)); border: 1px solid rgba(16, 185, 129, 0.4); box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);',
+        titleColor: '#6ee7b7'
+      };
+    }
+  }
+
+  function getSignatureStances(player) {
+    const signature = [];
+    const signatureNames = ['Exodia', 'Hansen 50', 'Hansen-50', 'Dirty Thirty', 'Dirty-Thirty'];
+    player.author_takes_map.forEach(auth => {
+      auth.stances.forEach(s => {
+        if (signatureNames.includes(s) && !signature.includes(s)) {
+          signature.push(s);
+        }
+      });
+    });
+    return signature;
+  }
+
   // Create Compact Row
   function createCompactPlayerRow(player, isDraftedMe, isDraftedOther) {
     const row = document.createElement('div');
@@ -427,16 +491,23 @@ document.addEventListener('DOMContentLoaded', () => {
     row.className = `player-row ${draftClass} ${isDrafted && hideDrafted ? 'hidden' : ''}`;
     row.setAttribute('data-player', player.canonical_key);
 
-    const allStances = new Set();
     const authors = Array.from(player.author_takes_map.keys());
-    player.author_takes_map.forEach(auth => auth.stances.forEach(s => allStances.add(s)));
-    const stances = Array.from(allStances);
-
     const isStarred = starredPlayers.has(player.canonical_key);
     const rawTargetList = player.raw_takes.map(t => t.target_round_advice || t.tier_or_target_round).filter(Boolean);
     const topTargetStr = consolidateTargetRoundAdvice(rawTargetList);
     const isCheckedForCompare = selectedForCompare.has(player.canonical_key);
     const adpDisplay = format12TeamAdpDisplay(player.sleeper_adp);
+
+    const consensusInfo = evaluatePlayerConsensus(player);
+    const signatureStances = getSignatureStances(player);
+
+    const stancePills = [];
+    signatureStances.forEach(sig => {
+      stancePills.push(`<span class="badge-stance ${sig.replace(/\s+/g, '-')}">${getIconForStance(sig)} ${sig}</span>`);
+    });
+    if (consensusInfo.label) {
+      stancePills.push(`<span class="badge-stance ${consensusInfo.class}">${consensusInfo.label}</span>`);
+    }
 
     row.innerHTML = `
       <div class="row-left">
@@ -463,7 +534,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
           <div class="row-sub-line">
             <span class="adp-tag">Sleeper: ${adpDisplay}</span>
-            <!-- Fix 2: Display Author Approval Tag -->
             <span class="author-approval-tag">✍️ ${authors.join(', ')}</span>
             ${topTargetStr ? `<span class="tier-tag">🎯 ${escapeHtml(topTargetStr)}</span>` : ''}
           </div>
@@ -472,7 +542,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       <div class="row-right">
         <div class="stance-pills-compact">
-          ${stances.map(s => `<span class="badge-stance ${s}">${getIconForStance(s)} ${s}</span>`).join('')}
+          ${stancePills.join('')}
         </div>
 
         <label class="compare-checkbox-label" onclick="event.stopPropagation();">
@@ -519,16 +589,16 @@ document.addEventListener('DOMContentLoaded', () => {
     card.className = `player-card ${draftClass} ${isDrafted && hideDrafted ? 'hidden' : ''}`;
     card.setAttribute('data-player', player.canonical_key);
 
-    const allStances = new Set();
-    const authors = Array.from(player.author_takes_map.keys());
-    player.author_takes_map.forEach(auth => auth.stances.forEach(s => allStances.add(s)));
-    const stances = Array.from(allStances);
+    const consensusInfo = evaluatePlayerConsensus(player);
+    const signatureStances = getSignatureStances(player);
 
-    const isStarred = starredPlayers.has(player.canonical_key);
-    const rawTargetList = player.raw_takes.map(t => t.target_round_advice || t.tier_or_target_round).filter(Boolean);
-    const topTargetStr = consolidateTargetRoundAdvice(rawTargetList);
-    const upsideSample = player.raw_takes.find(t => t.upside_metric)?.upside_metric || player.raw_takes[0]?.key_reason || '';
-    const isCheckedForCompare = selectedForCompare.has(player.canonical_key);
+    const stancePills = [];
+    signatureStances.forEach(sig => {
+      stancePills.push(`<span class="badge-stance ${sig.replace(/\s+/g, '-')}">${getIconForStance(sig)} ${sig}</span>`);
+    });
+    if (consensusInfo.label) {
+      stancePills.push(`<span class="badge-stance ${consensusInfo.class}">${consensusInfo.label}</span>`);
+    }
 
     card.innerHTML = `
       <div>
@@ -561,7 +631,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         <div class="card-body">
           <div class="stance-pill-row">
-            ${stances.map(s => `<span class="badge-stance ${s}">${getIconForStance(s)} ${s}</span>`).join('')}
+            ${stancePills.join('')}
             ${topTargetStr ? `<span class="tier-text">🎯 ${escapeHtml(topTargetStr)}</span>` : ''}
           </div>
 
@@ -837,9 +907,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const adpDisplay = format12TeamAdpDisplay(player.sleeper_adp);
 
     const authors = Array.from(player.author_takes_map.keys());
-    const allStances = [];
-    player.author_takes_map.forEach(auth => auth.stances.forEach(s => allStances.push(s)));
-    const primaryStance = getPrimaryStance(allStances);
+    const consensusInfo = evaluatePlayerConsensus(player);
     const aiSummaryText = generateAiConsensusSummary(player);
 
     modalContent.innerHTML = `
@@ -855,10 +923,10 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
 
       <!-- AI Executive Consensus Overview Box -->
-      <div style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(56, 189, 248, 0.15)); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px; box-shadow: 0 0 15px rgba(16, 185, 129, 0.15);">
+      <div style="${consensusInfo.boxStyle} border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <span style="font-weight: 800; font-size: 0.85rem; color: #6ee7b7; text-transform: uppercase; letter-spacing: 0.05em;">🤖 AI Executive Consensus</span>
-          <span class="badge-stance ${primaryStance}">${getIconForStance(primaryStance)} ${primaryStance}</span>
+          <span style="font-weight: 800; font-size: 0.85rem; color: ${consensusInfo.titleColor}; text-transform: uppercase; letter-spacing: 0.05em;">🤖 AI Executive Consensus</span>
+          <span class="badge-stance ${consensusInfo.class}">${consensusInfo.modalTitle}</span>
         </div>
         <p style="font-size: 0.88rem; color: #f1f5f9; line-height: 1.45; font-weight: 500;">
           ${escapeHtml(aiSummaryText)}

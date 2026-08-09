@@ -541,6 +541,9 @@ body {
 .badge-stance.Exodia { background: linear-gradient(135deg, rgba(234, 179, 8, 0.3), rgba(56, 189, 248, 0.3)); color: #fef08a; border: 1px solid #eab308; box-shadow: 0 0 10px rgba(234, 179, 8, 0.3); }
 .badge-stance.Hansen-50, .badge-stance.Hansen50 { background: rgba(16, 185, 129, 0.25); color: #6ee7b7; border: 1px solid #10b981; }
 .badge-stance.Dirty-Thirty, .badge-stance.DirtyThirty { background: rgba(225, 29, 72, 0.25); color: #fecdd3; border: 1px solid #e11d48; }
+.badge-stance.Consensus { background: rgba(16, 185, 129, 0.25); color: #6ee7b7; border: 1px solid #10b981; }
+.badge-stance.FadeConsensus { background: rgba(244, 63, 94, 0.25); color: #fecdd3; border: 1px solid #f43f5e; }
+.badge-stance.Split { background: rgba(245, 158, 11, 0.25); color: #fde68a; border: 1px solid #f59e0b; box-shadow: 0 0 8px rgba(245, 158, 11, 0.3); }
 
 .compare-checkbox-label { display: flex; align-items: center; gap: 3px; font-size: 0.7rem; color: var(--text-muted); cursor: pointer; }
 
