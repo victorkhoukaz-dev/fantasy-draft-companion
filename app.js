@@ -219,8 +219,6 @@ document.addEventListener('DOMContentLoaded', () => {
           sleeper_adp: sleeperAdp,
           pos_rank: posRank,
           pos_num: sleeperInfo?.pos_num || 99,
-          fp_overall_rank: take.fp_overall_rank || null,
-          fp_pos_rank: take.fp_pos_rank || null,
           raw_takes: [],
           author_takes_map: new Map(),
           author_pos_ranks: new Map()
@@ -230,24 +228,19 @@ document.addEventListener('DOMContentLoaded', () => {
       const playerObj = groupedPlayersMap.get(canonicalKey);
       playerObj.raw_takes.push(take);
 
-      if (take.fp_overall_rank) playerObj.fp_overall_rank = take.fp_overall_rank;
-      if (take.fp_pos_rank) {
-        playerObj.fp_pos_rank = take.fp_pos_rank;
-        const numMatch = take.fp_pos_rank.match(/\d+/);
-        if (numMatch) playerObj.fp_pos_num = parseInt(numMatch[0], 10);
-      }
-
-      const author = take.author || 'FantasyPoints Staff';
-      allAuthors.add(author);
-
-      if (take.fp_pos_rank) {
+      // Only record official author positional rank if explicitly provided in ranking files
+      if (take.is_official_ranking && take.fp_pos_rank) {
         const numMatch = take.fp_pos_rank.match(/\d+/);
         const posNum = numMatch ? parseInt(numMatch[0], 10) : 99;
-        playerObj.author_pos_ranks.set(author, {
+        const authorName = take.author || 'FantasyPoints Staff';
+        playerObj.author_pos_ranks.set(authorName, {
           pos_rank: take.fp_pos_rank,
           pos_num: posNum
         });
       }
+
+      const author = take.author || 'FantasyPoints Staff';
+      allAuthors.add(author);
 
       if (!playerObj.author_takes_map.has(author)) {
         playerObj.author_takes_map.set(author, {
@@ -288,25 +281,22 @@ document.addEventListener('DOMContentLoaded', () => {
       authorFilterSelect.value = selected;
     }
 
+    // Clean, fixed sort menu with strictly the 3 main pillars + ADP + Stance
     if (sortBySelect) {
       const currentSort = sortBySelect.value || 'adp';
       sortBySelect.innerHTML = `
         <option value="adp">Sort: Sleeper PPR ADP</option>
-        <option value="pos_rank">Sort: FP Consensus Positional Rank</option>
+        <option value="author_pos_Scott Barrett">Sort: ✍️ Scott Barrett Positional Rank</option>
+        <option value="author_pos_John Hansen">Sort: ✍️ John Hansen Positional Rank</option>
+        <option value="author_pos_FantasyPoints Staff">Sort: 📊 FP Staff (Consensus Projections)</option>
         <option value="stance">Sort: 🔥 Stance (Must-Draft First)</option>
       `;
-      Array.from(allAuthors).sort().forEach(auth => {
-        const opt = document.createElement('option');
-        opt.value = `author_pos_${auth}`;
-        opt.textContent = `Sort: ✍️ ${auth} Positional Rank`;
-        sortBySelect.appendChild(opt);
-      });
       sortBySelect.value = currentSort;
     }
 
     groupedPlayersMap.forEach(p => {
-      p.display_pos_rank = p.fp_pos_rank || p.pos_rank || `${p.position}`;
-      p.fp_pos_num = p.fp_pos_num || p.pos_num;
+      p.display_pos_rank = p.pos_rank;
+      p.fp_pos_num = p.pos_num;
     });
   }
 
@@ -349,13 +339,13 @@ document.addEventListener('DOMContentLoaded', () => {
     playersArray.sort((a, b) => {
       if (sortBy.startsWith('author_pos_')) {
         const targetAuthor = sortBy.replace('author_pos_', '');
-        const rankA = a.author_pos_ranks?.get(targetAuthor)?.pos_num || a.fp_pos_num || a.pos_num;
-        const rankB = b.author_pos_ranks?.get(targetAuthor)?.pos_num || b.fp_pos_num || b.pos_num;
+        const rankA = a.author_pos_ranks?.get(targetAuthor)?.pos_num || a.pos_num;
+        const rankB = b.author_pos_ranks?.get(targetAuthor)?.pos_num || b.pos_num;
         if (rankA !== rankB) return rankA - rankB;
         return a.sleeper_adp - b.sleeper_adp;
       } else if (sortBy === 'pos_rank' || sortBy === 'rank') {
-        const rankA = a.fp_pos_num || a.pos_num;
-        const rankB = b.fp_pos_num || b.pos_num;
+        const rankA = a.pos_num;
+        const rankB = b.pos_num;
         if (rankA !== rankB) return rankA - rankB;
         return a.sleeper_adp - b.sleeper_adp;
       } else if (sortBy === 'stance') {
@@ -536,11 +526,12 @@ document.addEventListener('DOMContentLoaded', () => {
       stancePills.push(`<span class="badge-stance ${consensusInfo.class}">${consensusInfo.label}</span>`);
     }
 
-    let displayedPosBadge = player.display_pos_rank || player.pos_rank;
+    // Clean Positional Badge (Defaults to Sleeper ADP Positional Rank, or Official Author Rank if active)
+    let displayedPosBadge = player.pos_rank;
     if (sortBy.startsWith('author_pos_')) {
       const targetAuthor = sortBy.replace('author_pos_', '');
       const authPosObj = player.author_pos_ranks?.get(targetAuthor);
-      if (authPosObj) {
+      if (authPosObj && authPosObj.pos_rank) {
         const shortAuthor = targetAuthor.split(' ')[0];
         displayedPosBadge = `${shortAuthor}: ${authPosObj.pos_rank}`;
       }

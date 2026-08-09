@@ -27,6 +27,7 @@ class PlayerTake(BaseModel):
     risk_factor: str = Field(description="Primary downside risk, injury history, or efficiency concern")
     fp_overall_rank: Optional[int] = Field(default=None, description="Official overall numerical rank if present in rankings sheet")
     fp_pos_rank: Optional[str] = Field(default=None, description="Official positional rank e.g. 'RB1', 'WR12' if present")
+    is_official_ranking: Optional[bool] = Field(default=False, description="Set True ONLY if extracted from a numerical cheat sheet/rankings table PDF")
 
 class ArticleExtraction(BaseModel):
     takes: List[PlayerTake] = Field(description="List of player analysis takes extracted from the article")
@@ -269,6 +270,7 @@ def ingest_pdfs(force=False):
     - risk_factor: Specific risk factor or downside concern
     - fp_pos_rank: Author's explicit positional rank if present in page or guide (e.g. 'RB1', 'RB12', 'WR4', 'QB6')
     - fp_overall_rank: Author's explicit overall rank number if present
+    - is_official_ranking: Set to true ONLY if this page is an official numerical rankings list/table/cheat sheet, NOT an article take.
     """
 
     models_to_try = ["gemini-flash-latest", "gemini-3.6-flash", "gemini-2.0-flash", "gemini-3.5-flash"]
