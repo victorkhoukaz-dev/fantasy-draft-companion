@@ -347,6 +347,12 @@ def ingest_pdfs(force=False):
         except Exception as e:
             logging.error(f"Error reading {filename}: {e}")
 
+    # Ingest CSV Rankings files if present
+    csv_takes = parse_csv_rankings(raw_dir)
+    if csv_takes:
+        logging.info(f"Loaded {len(csv_takes)} official ranking takes from CSV files.")
+        all_takes.extend(csv_takes)
+
     # Deduplicate takes based on player_name, author, and key_reason
     unique_takes = []
     seen = set()
@@ -368,6 +374,65 @@ def ingest_pdfs(force=False):
     logging.info(f"Successfully saved fantasypoints_db.json with {len(unique_takes)} total player takes.")
     print(f"\n[+] Success! Ingestion complete. Database updated: {len(unique_takes)} total player takes.\n")
     return True
+
+def parse_csv_rankings(raw_dir):
+    import csv
+    csv_files = glob.glob(os.path.join(raw_dir, "*.csv"))
+    csv_takes = []
+    for csv_path in csv_files:
+        filename = os.path.basename(csv_path)
+        author = "FantasyPoints Staff"
+        if "barrett" in filename.lower():
+            author = "Scott Barrett"
+        elif "hansen" in filename.lower():
+            author = "John Hansen"
+
+        try:
+            with open(csv_path, "r", encoding="utf-8-sig") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    rank = row.get("RANK") or row.get("Rank") or row.get("rank")
+                    name = row.get("NAME") or row.get("Name") or row.get("Player")
+                    pos = row.get("Position") or row.get("POS") or row.get("pos")
+                    team = row.get("Team") or row.get("TEAM") or "NFL"
+                    tier = row.get("TIER") or row.get("Tier") or ""
+                    
+                    exodia = row.get("EXODIA") or row.get("Exodia") or ""
+                    target = row.get("TARGET") or row.get("Target") or ""
+
+                    if not (rank and name and pos):
+                        continue
+                    
+                    pos = pos.upper().strip()
+                    rank_str = str(rank).strip()
+                    pos_rank = f"{pos}{rank_str}"
+
+                    stance = "Bullish"
+                    if str(exodia).lower() in ["true", "1", "exodia", "yes"]:
+                        stance = "Exodia"
+                    elif author == "John Hansen" and str(target).lower() in ["true", "1", "target", "yes"]:
+                        stance = "Hansen 50"
+                    elif author == "Scott Barrett" and str(target).lower() in ["true", "1", "target", "yes"]:
+                        stance = "Must-Draft"
+
+                    take = {
+                        "player_name": name.strip(),
+                        "position": pos,
+                        "team": team.strip(),
+                        "author": author,
+                        "stance": stance,
+                        "target_round_advice": f"Tier {tier}" if tier else "",
+                        "key_reason": f"Official {author} positional ranking: {pos_rank} (Tier {tier})" if tier else f"Official {author} positional ranking: {pos_rank}",
+                        "upside_metric": f"Official {author} Rank #{rank_str}",
+                        "risk_factor": "",
+                        "fp_pos_rank": pos_rank,
+                        "fp_overall_rank": int(rank_str) if rank_str.isdigit() else None,
+                        "is_official_ranking": True
+                    }
+                    csv_takes.append(take)
+        except Exception as e:
+            logging.warning(f"Error parsing CSV {filename}: {e}")
+    return csv_takes
 
 def watch_folder():
     raw_dir = os.path.join(os.path.dirname(__file__), "raw_articles")

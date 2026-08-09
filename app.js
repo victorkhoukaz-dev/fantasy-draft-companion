@@ -228,8 +228,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const playerObj = groupedPlayersMap.get(canonicalKey);
       playerObj.raw_takes.push(take);
 
-      // Store official author positional rank if extracted from ranking files
-      if (take.is_official_ranking && take.fp_pos_rank) {
+      // Store author positional rank if present
+      if (take.fp_pos_rank) {
         const numMatch = take.fp_pos_rank.match(/\d+/);
         const posNum = numMatch ? parseInt(numMatch[0], 10) : 99;
         const authorName = take.author || 'FantasyPoints Staff';

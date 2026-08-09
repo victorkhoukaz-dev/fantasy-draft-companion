@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fp-draft-companion-v24';
+const CACHE_NAME = 'fp-draft-companion-v25';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
