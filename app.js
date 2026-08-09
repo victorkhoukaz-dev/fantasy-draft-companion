@@ -145,13 +145,13 @@ document.addEventListener('DOMContentLoaded', () => {
           });
         });
 
-        if (sleeperStatusBadge) sleeperStatusBadge.textContent = 'Sleeper ADP 🟢';
+        if (sleeperStatusBadge) sleeperStatusBadge.textContent = '🟢 Sleeper ADP: Live';
         console.log(`Loaded Sleeper ADP for ${sortedPlayers.length} players.`);
         return sleeperAdpMap;
       })
       .catch(err => {
         console.warn('Sleeper API fetch failed:', err);
-        if (sleeperStatusBadge) sleeperStatusBadge.textContent = 'Sleeper ADP 🟡';
+        if (sleeperStatusBadge) sleeperStatusBadge.textContent = '🟡 Sleeper ADP: Cached';
         return sleeperAdpMap;
       });
   }

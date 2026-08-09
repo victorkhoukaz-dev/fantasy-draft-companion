@@ -93,6 +93,18 @@ body {
   -webkit-text-fill-color: transparent;
 }
 
+.badge-sleeper-live {
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: rgba(16, 185, 129, 0.2);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.5);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.25);
+  white-space: nowrap;
+}
+
 .brand-badge {
   font-size: 0.6rem;
   font-weight: 700;
