@@ -228,7 +228,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const playerObj = groupedPlayersMap.get(canonicalKey);
       playerObj.raw_takes.push(take);
 
-      // Only record official author positional rank if explicitly provided in ranking files
+      // Store official author positional rank if extracted from ranking files
       if (take.is_official_ranking && take.fp_pos_rank) {
         const numMatch = take.fp_pos_rank.match(/\d+/);
         const posNum = numMatch ? parseInt(numMatch[0], 10) : 99;
@@ -281,7 +281,6 @@ document.addEventListener('DOMContentLoaded', () => {
       authorFilterSelect.value = selected;
     }
 
-    // Clean, fixed sort menu with strictly the 3 main pillars + ADP + Stance
     if (sortBySelect) {
       const currentSort = sortBySelect.value || 'adp';
       sortBySelect.innerHTML = `
@@ -335,13 +334,30 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // Context-Aware Positional Sorting
+    // Context-Aware Positional Sorting (Official Ranks ➔ Stance Hierarchy Fallback ➔ ADP)
     playersArray.sort((a, b) => {
       if (sortBy.startsWith('author_pos_')) {
         const targetAuthor = sortBy.replace('author_pos_', '');
-        const rankA = a.author_pos_ranks?.get(targetAuthor)?.pos_num || a.pos_num;
-        const rankB = b.author_pos_ranks?.get(targetAuthor)?.pos_num || b.pos_num;
-        if (rankA !== rankB) return rankA - rankB;
+        const authPosA = a.author_pos_ranks?.get(targetAuthor)?.pos_num;
+        const authPosB = b.author_pos_ranks?.get(targetAuthor)?.pos_num;
+
+        // If official ranking file exists for both, sort by exact numerical rank!
+        if (authPosA && authPosB) return authPosA - authPosB;
+        if (authPosA) return -1;
+        if (authPosB) return 1;
+
+        // Smart Fallback: Sort by that specific author's stances!
+        const authTakeA = a.author_takes_map.get(targetAuthor);
+        const authTakeB = b.author_takes_map.get(targetAuthor);
+
+        const stanceA = authTakeA ? getPrimaryStance(Array.from(authTakeA.stances)) : null;
+        const stanceB = authTakeB ? getPrimaryStance(Array.from(authTakeB.stances)) : null;
+
+        const hierarchy = { 'Exodia': 1, 'Must-Draft': 2, 'Hansen 50': 3, 'Hansen-50': 3, 'Breakout': 4, 'Bullish': 5, 'Sleeper': 6, 'Dirty Thirty': 7, 'Dirty-Thirty': 7, 'Bearish': 8, 'Avoid': 9 };
+        const scoreA = stanceA ? (hierarchy[stanceA] || 10) : 99;
+        const scoreB = stanceB ? (hierarchy[stanceB] || 10) : 99;
+
+        if (scoreA !== scoreB) return scoreA - scoreB;
         return a.sleeper_adp - b.sleeper_adp;
       } else if (sortBy === 'pos_rank' || sortBy === 'rank') {
         const rankA = a.pos_num;
@@ -526,14 +542,17 @@ document.addEventListener('DOMContentLoaded', () => {
       stancePills.push(`<span class="badge-stance ${consensusInfo.class}">${consensusInfo.label}</span>`);
     }
 
-    // Clean Positional Badge (Defaults to Sleeper ADP Positional Rank, or Official Author Rank if active)
+    // Clean Positional Badge (Defaults to Sleeper ADP Positional Rank, or Author Stance / Rank if active)
     let displayedPosBadge = player.pos_rank;
     if (sortBy.startsWith('author_pos_')) {
       const targetAuthor = sortBy.replace('author_pos_', '');
       const authPosObj = player.author_pos_ranks?.get(targetAuthor);
+      const shortAuthor = targetAuthor.split(' ')[0];
       if (authPosObj && authPosObj.pos_rank) {
-        const shortAuthor = targetAuthor.split(' ')[0];
         displayedPosBadge = `${shortAuthor}: ${authPosObj.pos_rank}`;
+      } else if (player.author_takes_map.has(targetAuthor)) {
+        const authStance = getPrimaryStance(Array.from(player.author_takes_map.get(targetAuthor).stances));
+        displayedPosBadge = `${shortAuthor}: ${getIconForStance(authStance)}`;
       }
     }
 
