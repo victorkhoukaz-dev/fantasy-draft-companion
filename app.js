@@ -112,48 +112,78 @@ document.addEventListener('DOMContentLoaded', () => {
       });
   });
 
-  // Fetch Live Sleeper ADP
+  // Fetch Live Sleeper Real ADP & Positional Ranks
   function fetchSleeperAdp() {
-    return fetch('https://api.sleeper.app/v1/players/nfl')
-      .then(res => {
-        if (!res.ok) throw new Error('Sleeper API HTTP error');
-        return res.json();
-      })
-      .then(players => {
-        sleeperAdpMap.clear();
-        const posCounters = { QB: 0, RB: 0, WR: 0, TE: 0 };
-        
-        const sortedPlayers = Object.values(players)
-          .filter(p => p.full_name && p.search_rank && p.search_rank < 500)
-          .sort((a, b) => a.search_rank - b.search_rank);
+    const year = new Date().getFullYear();
+    const playersUrl = 'https://api.sleeper.app/v1/players/nfl';
+    const projectionsUrl = `https://api.sleeper.app/projections/nfl/${year}?season_type=regular&position[]=QB&position[]=RB&position[]=WR&position[]=TE`;
 
-        sortedPlayers.forEach(p => {
-          const norm = getCanonicalNameKey(p.full_name);
-          const pos = p.position || 'FLEX';
-          if (posCounters[pos] !== undefined) {
-            posCounters[pos]++;
+    return Promise.all([
+      fetch(playersUrl).then(res => res.json()),
+      fetch(projectionsUrl).then(res => res.json()).catch(() => [])
+    ])
+    .then(([players, projections]) => {
+      sleeperAdpMap.clear();
+
+      // Map player_id -> ADP stat value
+      const adpByPlayerId = new Map();
+      if (Array.isArray(projections)) {
+        projections.forEach(item => {
+          if (item && item.player_id && item.stats) {
+            const val = item.stats.adp_half_ppr || item.stats.adp_ppr || item.stats.adp_std;
+            if (val && val < 990) {
+              adpByPlayerId.set(item.player_id, val);
+            }
           }
-          const posRank = posCounters[pos] ? `${pos}${posCounters[pos]}` : pos;
-
-          sleeperAdpMap.set(norm, {
-            adp: p.search_rank,
-            position: pos,
-            team: p.team || 'NFL',
-            full_name: p.full_name,
-            pos_rank: posRank,
-            pos_num: posCounters[pos] || 99
-          });
         });
+      }
 
-        if (sleeperStatusBadge) sleeperStatusBadge.textContent = '🟢 Sleeper ADP: Live';
-        console.log(`Loaded Sleeper ADP for ${sortedPlayers.length} players.`);
-        return sleeperAdpMap;
-      })
-      .catch(err => {
-        console.warn('Sleeper API fetch failed:', err);
-        if (sleeperStatusBadge) sleeperStatusBadge.textContent = '🟡 Sleeper ADP: Cached';
-        return sleeperAdpMap;
+      // Build sorted list of active players with true ADP
+      const sortedPlayers = Object.values(players)
+        .filter(p => p && p.full_name && p.position)
+        .map(p => {
+          const realAdp = adpByPlayerId.get(p.player_id) || p.search_rank || 300;
+          return {
+            player: p,
+            adp: Math.round(realAdp * 10) / 10,
+            pos: p.position
+          };
+        })
+        .filter(item => item.adp < 500)
+        .sort((a, b) => a.adp - b.adp);
+
+      const posCounters = { QB: 0, RB: 0, WR: 0, TE: 0 };
+
+      sortedPlayers.forEach(item => {
+        const p = item.player;
+        const norm = getCanonicalNameKey(p.full_name);
+        const pos = item.pos || 'FLEX';
+
+        if (posCounters[pos] !== undefined) {
+          posCounters[pos]++;
+        }
+
+        const posRank = posCounters[pos] ? `${pos}${posCounters[pos]}` : pos;
+
+        sleeperAdpMap.set(norm, {
+          adp: item.adp,
+          position: pos,
+          team: p.team || 'NFL',
+          full_name: p.full_name,
+          pos_rank: posRank,
+          pos_num: posCounters[pos] || 99
+        });
       });
+
+      if (sleeperStatusBadge) sleeperStatusBadge.textContent = '🟢 Sleeper ADP: Live';
+      console.log(`Loaded Live Sleeper Real ADP for ${sortedPlayers.length} players.`);
+      return sleeperAdpMap;
+    })
+    .catch(err => {
+      console.warn('Sleeper API fetch failed:', err);
+      if (sleeperStatusBadge) sleeperStatusBadge.textContent = '🟡 Sleeper ADP: Cached';
+      return sleeperAdpMap;
+    });
   }
 
   // Helper: Normalize name
