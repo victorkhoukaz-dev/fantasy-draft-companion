@@ -125,12 +125,12 @@ document.addEventListener('DOMContentLoaded', () => {
     .then(([players, projections]) => {
       sleeperAdpMap.clear();
 
-      // Map player_id -> ADP stat value
+      // Map player_id -> ADP stat value (PPR first)
       const adpByPlayerId = new Map();
       if (Array.isArray(projections)) {
         projections.forEach(item => {
           if (item && item.player_id && item.stats) {
-            const val = item.stats.adp_half_ppr || item.stats.adp_ppr || item.stats.adp_std;
+            const val = item.stats.adp_ppr || item.stats.adp_half_ppr || item.stats.adp_std;
             if (val && val < 990) {
               adpByPlayerId.set(item.player_id, val);
             }
@@ -145,7 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const realAdp = adpByPlayerId.get(p.player_id) || p.search_rank || 300;
           return {
             player: p,
-            adp: Math.round(realAdp * 10) / 10,
+            adp: Math.round(realAdp),
             pos: p.position
           };
         })
@@ -384,6 +384,17 @@ document.addEventListener('DOMContentLoaded', () => {
     updateCompareFloatingBar();
   }
 
+  // Helper: Format 12-Team Draft Round & Pick
+  function format12TeamAdpDisplay(rawAdp) {
+    const rounded = Math.round(rawAdp);
+    if (!rounded || rounded >= 300) return 'Undrafted';
+    
+    const round = Math.ceil(rounded / 12);
+    const pickInRound = rounded % 12 === 0 ? 12 : rounded % 12;
+    
+    return `#${rounded} (Rd ${round}.${pickInRound})`;
+  }
+
   // Create Compact Row
   function createCompactPlayerRow(player, isDraftedMe, isDraftedOther) {
     const row = document.createElement('div');
@@ -404,10 +415,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const isStarred = starredPlayers.has(player.canonical_key);
     const topTargetStr = player.raw_takes.find(t => t.tier_or_target_round)?.tier_or_target_round || '';
     const isCheckedForCompare = selectedForCompare.has(player.canonical_key);
-    
-    const roundEst = player.sleeper_adp < 300 ? Math.ceil(player.sleeper_adp / 12) : '-';
-    const pickEst = player.sleeper_adp < 300 ? ((player.sleeper_adp - 1) % 12) + 1 : '-';
-    const adpDisplay = player.sleeper_adp < 300 ? `#${player.sleeper_adp} (Rd ${roundEst}.${pickEst})` : 'Undrafted';
+    const adpDisplay = format12TeamAdpDisplay(player.sleeper_adp);
 
     row.innerHTML = `
       <div class="row-left">
@@ -778,8 +786,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function openPlayerModal(player) {
     const isDraftedMe = myRosterPlayers.has(player.canonical_key);
     const isDraftedOther = otherDraftedPlayers.has(player.canonical_key);
-    const roundEst = player.sleeper_adp < 300 ? Math.ceil(player.sleeper_adp / 12) : '-';
-    const pickEst = player.sleeper_adp < 300 ? ((player.sleeper_adp - 1) % 12) + 1 : '-';
+    const adpDisplay = format12TeamAdpDisplay(player.sleeper_adp);
 
     const authors = Array.from(player.author_takes_map.keys());
     const allStances = [];
@@ -791,7 +798,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="modal-meta-bar" style="margin-bottom: 6px;">
           <span class="badge-pos ${player.position}">${escapeHtml(player.display_pos_rank || player.pos_rank)}</span>
           <span class="team-name" style="font-size: 1rem;">${escapeHtml(player.team)}</span>
-          <span class="adp-tag">Sleeper ADP: #${player.sleeper_adp} (Rd ${roundEst}.${pickEst})</span>
+          <span class="adp-tag">Sleeper PPR: ${adpDisplay}</span>
           ${isDraftedMe ? '<span class="badge-stance Must-Draft">MY TEAM</span>' : ''}
           ${isDraftedOther ? '<span class="badge-stance Avoid">DRAFTED</span>' : ''}
         </div>
