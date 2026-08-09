@@ -429,7 +429,6 @@ body {
 
 .player-row.drafted-other { opacity: 0.35; filter: grayscale(80%); border-style: dashed; }
 .player-row.drafted-me { background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.5); }
-.player-row.drafted.hidden { display: none !important; }
 
 .row-left { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
 

@@ -1,0 +1,18 @@
+{
+  "_instructions": "Add a player name and its corrected position and/or team, then run python ingest.py --validate.",
+  "Trevor Lawrence": {
+    "position": "QB",
+    "team": "JAX"
+  },
+  "Alvin Kamara": {
+    "position": "RB"
+  },
+  "Emeka Egbuka": {
+    "position": "WR",
+    "team": "TB"
+  },
+  "Luther Burden": {
+    "position": "WR",
+    "team": "CHI"
+  }
+}

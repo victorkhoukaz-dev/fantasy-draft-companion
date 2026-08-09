@@ -13,7 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentPosFilter = 'ALL';
   let currentAuthorFilter = 'ALL';
   let searchQuery = '';
-  let hideDrafted = localStorage.getItem('fp_hide_drafted') === 'true';
   let viewMode = localStorage.getItem('fp_view_mode') || 'list'; // 'list' or 'card'
   let sortBy = localStorage.getItem('fp_sort_by') || 'adp'; // 'adp', 'pos_rank', 'stance'
   let isSidebarCollapsed = localStorage.getItem('fp_sidebar_collapsed') === 'true';
@@ -47,7 +46,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const authorFilterSelect = document.getElementById('authorFilterSelect');
   const viewListBtn = document.getElementById('viewListBtn');
   const viewCardBtn = document.getElementById('viewCardBtn');
-  const hideDraftedBtn = document.getElementById('hideDraftedBtn');
   const resetDraftBtn = document.getElementById('resetDraftBtn');
   const posChips = document.querySelectorAll('.pos-chip');
   const activeCountEl = document.getElementById('activeCount');
@@ -85,7 +83,6 @@ document.addEventListener('DOMContentLoaded', () => {
       renderPlayerBoard();
     });
   }
-  updateHideDraftedButtonState();
   updateSidebarVisibility();
   updateHeaderCounts();
 
@@ -487,13 +484,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // Create Compact Row
   function createCompactPlayerRow(player, isDraftedMe, isDraftedOther) {
     const row = document.createElement('div');
-    const isDrafted = isDraftedMe || isDraftedOther;
-    
+
     let draftClass = '';
     if (isDraftedMe) draftClass = 'drafted-me';
     else if (isDraftedOther) draftClass = 'drafted-other';
 
-    row.className = `player-row ${draftClass} ${isDrafted && hideDrafted ? 'hidden' : ''}`;
+    row.className = `player-row ${draftClass}`;
     row.setAttribute('data-player', player.canonical_key);
 
     const authors = Array.from(player.author_takes_map.keys());
@@ -585,13 +581,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // Create Standard Detailed Card
   function createPlayerCard(player, isDraftedMe, isDraftedOther) {
     const card = document.createElement('div');
-    const isDrafted = isDraftedMe || isDraftedOther;
 
     let draftClass = '';
     if (isDraftedMe) draftClass = 'drafted-me';
     else if (isDraftedOther) draftClass = 'drafted-other';
 
-    card.className = `player-card ${draftClass} ${isDrafted && hideDrafted ? 'hidden' : ''}`;
+    card.className = `player-card ${draftClass}`;
     card.setAttribute('data-player', player.canonical_key);
 
     const consensusInfo = evaluatePlayerConsensus(player);
@@ -1123,13 +1118,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  hideDraftedBtn.addEventListener('click', () => {
-    hideDrafted = !hideDrafted;
-    localStorage.setItem('fp_hide_drafted', hideDrafted ? 'true' : 'false');
-    updateHideDraftedButtonState();
-    renderPlayerBoard();
-  });
-
   resetDraftBtn.addEventListener('click', () => {
     if (confirm('Reset all drafted player statuses & rosters?')) {
       myRosterPlayers.clear();
@@ -1150,14 +1138,6 @@ document.addEventListener('DOMContentLoaded', () => {
       renderPlayerBoard();
     });
   });
-
-  function updateHideDraftedButtonState() {
-    if (hideDrafted) {
-      hideDraftedBtn.classList.add('active');
-    } else {
-      hideDraftedBtn.classList.remove('active');
-    }
-  }
 
   function updateViewToggleButtonState() {
     if (viewListBtn && viewCardBtn) {

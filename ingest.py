@@ -53,7 +53,133 @@ def get_api_key():
             pass
     return None
 
-MANIFEST_PATH = os.path.join(os.path.dirname(__file__), "ingested_manifest.json")
+BASE_DIR = os.path.dirname(__file__)
+MANIFEST_PATH = os.path.join(BASE_DIR, "ingested_manifest.json")
+CORRECTIONS_PATH = os.path.join(BASE_DIR, "manual_corrections.json")
+
+VALID_POSITIONS = {"QB", "RB", "WR", "TE"}
+VALID_TEAMS = {
+    "ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE",
+    "DAL", "DEN", "DET", "GB", "HOU", "IND", "JAX", "KC",
+    "LV", "LAC", "LAR", "MIA", "MIN", "NE", "NO", "NYG",
+    "NYJ", "PHI", "PIT", "SF", "SEA", "TB", "TEN", "WAS",
+    "FA", "NFL", "N/A", "TBD"
+}
+CORRECTABLE_FIELDS = {"position", "team"}
+
+def load_manual_corrections():
+    if not os.path.exists(CORRECTIONS_PATH):
+        return {}
+
+    try:
+        with open(CORRECTIONS_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError("the top level must be a JSON object")
+        return {
+            name.strip().lower(): values
+            for name, values in data.items()
+            if not name.startswith("_") and isinstance(values, dict)
+        }
+    except Exception as e:
+        logging.warning(f"Could not load manual_corrections.json: {e}")
+        return {}
+
+def apply_manual_corrections(takes):
+    corrections = load_manual_corrections()
+    applied_count = 0
+
+    for take in takes:
+        player_name = str(take.get("player_name", "")).strip()
+        player_corrections = corrections.get(player_name.lower())
+        if not player_corrections:
+            continue
+
+        for field, corrected_value in player_corrections.items():
+            if field not in CORRECTABLE_FIELDS:
+                logging.warning(f"Ignoring unsupported correction field '{field}' for {player_name}")
+                continue
+            if take.get(field) != corrected_value:
+                logging.info(
+                    f"Applied manual correction: {player_name} {field} "
+                    f"'{take.get(field)}' -> '{corrected_value}'"
+                )
+                take[field] = corrected_value
+                applied_count += 1
+
+    return applied_count
+
+def validate_takes(takes):
+    warnings = []
+    positions_by_player = {}
+
+    for index, take in enumerate(takes, start=1):
+        player_name = str(take.get("player_name", "")).strip() or "Unknown player"
+        position = str(take.get("position", "")).strip()
+        team = str(take.get("team", "")).strip()
+
+        if position not in VALID_POSITIONS:
+            warnings.append(
+                f"Record {index}, {player_name}: position '{position}' must be QB, RB, WR, or TE"
+            )
+
+        if team not in VALID_TEAMS:
+            warnings.append(
+                f"Record {index}, {player_name}: team '{team}' is not a recognized NFL abbreviation"
+            )
+
+        positions_by_player.setdefault(player_name.lower(), {"name": player_name, "positions": set()})
+        if position:
+            positions_by_player[player_name.lower()]["positions"].add(position)
+
+    for player_data in positions_by_player.values():
+        valid_player_positions = player_data["positions"] & VALID_POSITIONS
+        if len(valid_player_positions) > 1:
+            positions = ", ".join(sorted(valid_player_positions))
+            warnings.append(
+                f"{player_data['name']}: conflicting positions found ({positions})"
+            )
+
+    return warnings
+
+def prepare_takes_for_save(takes):
+    applied_count = apply_manual_corrections(takes)
+    warnings = validate_takes(takes)
+
+    if applied_count:
+        logging.info(f"Applied {applied_count} saved manual correction(s).")
+
+    if warnings:
+        logging.warning(f"Data validation found {len(warnings)} warning(s):")
+        for warning in warnings:
+            logging.warning(f"  - {warning}")
+        logging.warning(
+            "To make durable fixes, edit manual_corrections.json and run: "
+            "python ingest.py --validate"
+        )
+    else:
+        logging.info(f"Data validation passed for {len(takes)} record(s).")
+
+    return applied_count, warnings
+
+def validate_existing_database():
+    db_path = os.path.join(BASE_DIR, "fantasypoints_db.json")
+    try:
+        with open(db_path, "r", encoding="utf-8") as f:
+            takes = json.load(f)
+        if not isinstance(takes, list):
+            raise ValueError("fantasypoints_db.json must contain a JSON array")
+    except Exception as e:
+        logging.error(f"Could not validate fantasypoints_db.json: {e}")
+        return False
+
+    applied_count, warnings = prepare_takes_for_save(takes)
+    if applied_count:
+        with open(db_path, "w", encoding="utf-8") as f:
+            json.dump(takes, f, indent=2, ensure_ascii=False)
+        logging.info("Saved corrected values to fantasypoints_db.json.")
+
+    return not warnings
 
 def load_manifest():
     if os.path.exists(MANIFEST_PATH):
@@ -230,6 +356,8 @@ def ingest_pdfs(force=False):
             seen.add(key)
             unique_takes.append(take)
 
+    prepare_takes_for_save(unique_takes)
+
     with open(db_path, "w", encoding="utf-8") as f:
         json.dump(unique_takes, f, indent=2, ensure_ascii=False)
 
@@ -272,6 +400,8 @@ def watch_folder():
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] in ["--watch", "-w", "watch"]:
         watch_folder()
+    elif len(sys.argv) > 1 and sys.argv[1] in ["--validate", "validate"]:
+        validate_existing_database()
     elif len(sys.argv) > 1 and sys.argv[1] in ["--force", "-f"]:
         ingest_pdfs(force=True)
     else:

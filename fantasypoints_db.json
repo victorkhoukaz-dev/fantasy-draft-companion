@@ -211,7 +211,7 @@
   {
     "player_name": "Luther Burden",
     "position": "WR",
-    "team": "NFL",
+    "team": "CHI",
     "author": "Scott Barrett",
     "stance": "Must-Draft",
     "tier_or_target_round": "Exodia / Rounds 5+",
@@ -508,7 +508,7 @@
   {
     "player_name": "Emeka Egbuka",
     "position": "WR",
-    "team": "Ohio State",
+    "team": "TB",
     "author": "Scott Barrett",
     "stance": "Must-Draft",
     "tier_or_target_round": "WR15 / WR21 on Yahoo!",
@@ -541,7 +541,7 @@
   {
     "player_name": "Luther Burden",
     "position": "WR",
-    "team": "Missouri",
+    "team": "CHI",
     "author": "Scott Barrett",
     "stance": "Must-Draft",
     "tier_or_target_round": "Rounds 5-6 / WR23 on Yahoo/FFPC, WR28 on ESPN",
@@ -805,7 +805,7 @@
   {
     "player_name": "Luther Burden",
     "position": "WR",
-    "team": "N/A",
+    "team": "CHI",
     "author": "Scott Barrett",
     "stance": "Must-Draft",
     "tier_or_target_round": "ADP: WR23",
@@ -1268,8 +1268,8 @@
   },
   {
     "player_name": "Trevor Lawrence",
-    "position": "Jax",
-    "team": "Jax",
+    "position": "QB",
+    "team": "JAX",
     "author": "John Hansen",
     "stance": "Bullish",
     "tier_or_target_round": "Target Pick 88 / QB8-10 ADP",
@@ -1515,7 +1515,7 @@
   },
   {
     "player_name": "Alvin Kamara",
-    "position": "NO",
+    "position": "RB",
     "team": "NO",
     "author": "John Hansen",
     "stance": "Bullish",
