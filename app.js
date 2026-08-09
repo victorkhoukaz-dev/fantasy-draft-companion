@@ -324,44 +324,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     let visibleCount = 0;
-    let currentTierBoundary = 0;
 
-    // Pre-calculate exact count of available players per tier group for accuracy
-    const tierGroupsMap = new Map(); // tierGroupNum -> array of players belonging to this tier
-    if (currentPosFilter !== 'ALL' && currentPosFilter !== 'DECK') {
-      playersArray.forEach((p, idx) => {
-        const tierNum = Math.ceil((idx + 1) / 5);
-        if (!tierGroupsMap.has(tierNum)) tierGroupsMap.set(tierNum, []);
-        tierGroupsMap.get(tierNum).push(p);
-      });
-    }
-
-    playersArray.forEach((player, idx) => {
+    playersArray.forEach((player) => {
       const isDraftedMe = myRosterPlayers.has(player.canonical_key);
       const isDraftedOther = otherDraftedPlayers.has(player.canonical_key);
-      const isDrafted = isDraftedMe || isDraftedOther;
 
       visibleCount++;
-
-      // Fix 1: Exact Positional Tier Divider Rows
-      if (viewMode === 'list' && currentPosFilter !== 'ALL' && currentPosFilter !== 'DECK') {
-        const playerTierGroup = Math.ceil((idx + 1) / 5);
-        if (playerTierGroup !== currentTierBoundary) {
-          currentTierBoundary = playerTierGroup;
-          
-          const tierPlayersList = tierGroupsMap.get(currentTierBoundary) || [];
-          const remainingInTier = tierPlayersList.filter(p => !myRosterPlayers.has(p.canonical_key) && !otherDraftedPlayers.has(p.canonical_key)).length;
-          const totalInTier = tierPlayersList.length;
-
-          const divider = document.createElement('div');
-          divider.className = 'tier-divider-row';
-          divider.innerHTML = `
-            <span>--- ${currentPosFilter} TIER ${currentTierBoundary} ---</span>
-            ${remainingInTier <= 2 ? `<span class="tier-alert-pill">⚠️ Only ${remainingInTier} Left!</span>` : `<span style="font-size: 0.75rem; color: var(--text-muted);">${remainingInTier} / ${totalInTier} Available</span>`}
-          `;
-          playerGrid.appendChild(divider);
-        }
-      }
 
       if (viewMode === 'list') {
         const row = createCompactPlayerRow(player, isDraftedMe, isDraftedOther);
@@ -382,6 +350,34 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     updateCompareFloatingBar();
+  }
+
+  // Helper: Consolidate & Clean Target Round Advice (No Tiers, No Redundancy)
+  function consolidateTargetRoundAdvice(rawList) {
+    if (!rawList || rawList.length === 0) return '';
+
+    const cleaned = [];
+    rawList.forEach(rawStr => {
+      if (!rawStr) return;
+      // Strip out tier mentions, ADP QB tags, and bracket noise
+      let str = rawStr
+        .replace(/tier\s*\d+/gi, '')
+        .replace(/\(adp\s*[^)]*\)/gi, '')
+        .replace(/adp\s*[a-z0-9-]+/gi, '')
+        .replace(/\(qb\d+\)/gi, '')
+        .replace(/\(rb\d+\)/gi, '')
+        .replace(/\(wr\d+\)/gi, '')
+        .replace(/\(te\d+\)/gi, '')
+        .replace(/\s*\/\s*/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      
+      if (str && !cleaned.some(c => c.toLowerCase() === str.toLowerCase() || str.toLowerCase().includes(c.toLowerCase()))) {
+        cleaned.push(str);
+      }
+    });
+
+    return cleaned.join(' / ');
   }
 
   // Helper: Format 12-Team Draft Round & Pick
@@ -413,7 +409,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const stances = Array.from(allStances);
 
     const isStarred = starredPlayers.has(player.canonical_key);
-    const topTargetStr = player.raw_takes.find(t => t.tier_or_target_round)?.tier_or_target_round || '';
+    const rawTargetList = player.raw_takes.map(t => t.target_round_advice || t.tier_or_target_round).filter(Boolean);
+    const topTargetStr = consolidateTargetRoundAdvice(rawTargetList);
     const isCheckedForCompare = selectedForCompare.has(player.canonical_key);
     const adpDisplay = format12TeamAdpDisplay(player.sleeper_adp);
 
@@ -504,7 +501,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const stances = Array.from(allStances);
 
     const isStarred = starredPlayers.has(player.canonical_key);
-    const topTargetStr = player.raw_takes.find(t => t.tier_or_target_round)?.tier_or_target_round || '';
+    const rawTargetList = player.raw_takes.map(t => t.target_round_advice || t.tier_or_target_round).filter(Boolean);
+    const topTargetStr = consolidateTargetRoundAdvice(rawTargetList);
     const upsideSample = player.raw_takes.find(t => t.upside_metric)?.upside_metric || player.raw_takes[0]?.key_reason || '';
     const isCheckedForCompare = selectedForCompare.has(player.canonical_key);
 
@@ -820,7 +818,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="modal-takes-list">
         ${Array.from(player.author_takes_map.values()).map(auth => {
           const authStance = getPrimaryStance(Array.from(auth.stances));
-          const targetStr = Array.from(auth.tiers).join(' / ') || 'Author Advice';
+          const targetStr = consolidateTargetRoundAdvice(Array.from(auth.tiers));
 
           return `
             <div class="modal-take-card">
@@ -829,10 +827,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span class="badge-stance ${authStance}">${getIconForStance(authStance)} ${authStance}</span>
               </div>
 
-              <div class="take-section">
-                <div class="take-label">🎯 Target / Round Advice</div>
-                <div class="take-text" style="font-weight: 600; color: #38bdf8;">${escapeHtml(targetStr)}</div>
-              </div>
+              ${targetStr ? `
+                <div class="take-section">
+                  <div class="take-label">🎯 Target Round</div>
+                  <div class="take-text" style="font-weight: 600; color: #38bdf8;">${escapeHtml(targetStr)}</div>
+                </div>
+              ` : ''}
 
               <div class="take-section">
                 <div class="take-label">📊 Key Analytical Reasons</div>

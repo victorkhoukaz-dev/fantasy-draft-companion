@@ -21,7 +21,7 @@ class PlayerTake(BaseModel):
     team: str = Field(description="NFL team abbreviation or full name, e.g., 'SF' or 'San Francisco 49ers'")
     author: str = Field(description="Author or analyst who wrote the take, e.g., 'Scott Barrett', 'John Hansen', 'Graham Barfield'")
     stance: str = Field(description="Author stance: Bullish, Bearish, Sleeper, Must-Draft, Breakout, or Avoid")
-    tier_or_target_round: str = Field(description="Tier ranking or target draft round")
+    target_round_advice: str = Field(description="Target draft round advice e.g. 'Round 6', 'Rounds 7-8', 'Mid-to-Late Rounds'. DO NOT include the word 'Tier' or tier numbers.")
     key_reason: str = Field(description="Core analysis and strategic reasoning for this stance")
     upside_metric: str = Field(description="Key metric, statistic, or projection highlighting ceiling/upside")
     risk_factor: str = Field(description="Primary downside risk, injury history, or efficiency concern")
@@ -137,7 +137,7 @@ def ingest_pdfs(force=False):
     - team: Team abbreviation or name
     - author: Author/analyst name who wrote the piece (if unknown, use 'FantasyPoints Staff')
     - stance: Must be strictly one of: Bullish, Bearish, Sleeper, Must-Draft, Breakout, Avoid
-    - tier_or_target_round: Tier or recommended target round (e.g. 'Tier 1 / Round 1' or 'Round 3 Target')
+    - target_round_advice: Specific target draft round advice (e.g. 'Round 3 Target', 'Rounds 7-8', 'Mid Rounds'). DO NOT include the word 'Tier' or tier numbers.
     - key_reason: Detailed core analytical reason for the stance
     - upside_metric: Specific statistical metric, projection, or efficiency metric showing upside
     - risk_factor: Specific risk factor or downside concern
