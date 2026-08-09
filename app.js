@@ -79,8 +79,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Initialize UI Controls
   if (sortBySelect) sortBySelect.value = sortBy;
+  if (authorFilterSelect) {
+    authorFilterSelect.addEventListener('change', (e) => {
+      currentAuthorFilter = e.target.value;
+      renderPlayerBoard();
+    });
+  }
   updateHideDraftedButtonState();
-  updateViewToggleButtonState();
   updateSidebarVisibility();
   updateHeaderCounts();
 
@@ -286,12 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Render Player Board & Sidebar Panel
   function renderPlayerBoard() {
     playerGrid.innerHTML = '';
-    
-    if (viewMode === 'list') {
-      playerGrid.className = 'player-list-view';
-    } else {
-      playerGrid.className = 'player-grid';
-    }
+    playerGrid.className = 'player-list-view';
 
     let playersArray = Array.from(groupedPlayersMap.values());
 
@@ -355,13 +355,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       visibleCount++;
 
-      if (viewMode === 'list') {
-        const row = createCompactPlayerRow(player, isDraftedMe, isDraftedOther);
-        playerGrid.appendChild(row);
-      } else {
-        const card = createPlayerCard(player, isDraftedMe, isDraftedOther);
-        playerGrid.appendChild(card);
-      }
+      const row = createCompactPlayerRow(player, isDraftedMe, isDraftedOther);
+      playerGrid.appendChild(row);
     });
 
     renderRosterSidebarContent();
@@ -469,6 +464,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function getSignatureStances(player) {
     const signature = [];
     const signatureNames = ['Exodia', 'Hansen 50', 'Hansen-50', 'Dirty Thirty', 'Dirty-Thirty'];
+    
     player.author_takes_map.forEach(auth => {
       auth.stances.forEach(s => {
         if (signatureNames.includes(s) && !signature.includes(s)) {
@@ -476,6 +472,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
     });
+
+    // Fallback: Scan text for keywords if stance wasn't explicitly extracted in JSON
+    if (signature.length === 0 && player.raw_takes) {
+      const fullText = player.raw_takes.map(t => `${t.key_reason || ''} ${t.target_round_advice || ''} ${t.tier_or_target_round || ''}`).join(' ').toLowerCase();
+      if (fullText.includes('exodia') && !signature.includes('Exodia')) signature.push('Exodia');
+      if ((fullText.includes('hansen 50') || fullText.includes('hansen50')) && !signature.includes('Hansen 50')) signature.push('Hansen 50');
+      if ((fullText.includes('dirty thirty') || fullText.includes('dirty 30')) && !signature.includes('Dirty Thirty')) signature.push('Dirty Thirty');
+    }
+
     return signature;
   }
 
@@ -878,10 +883,23 @@ document.addEventListener('DOMContentLoaded', () => {
   function generateAiConsensusSummary(player) {
     if (player.ai_consensus_summary) return player.ai_consensus_summary;
 
-    const authors = Array.from(player.author_takes_map.keys());
-    const allStances = [];
-    player.author_takes_map.forEach(auth => auth.stances.forEach(s => allStances.push(s)));
-    const primaryStance = getPrimaryStance(allStances);
+    const consensusInfo = evaluatePlayerConsensus(player);
+    const positiveSet = new Set(['Exodia', 'Hansen 50', 'Hansen-50', 'Must-Draft', 'Bullish', 'Breakout', 'Sleeper']);
+    const negativeSet = new Set(['Dirty Thirty', 'Dirty-Thirty', 'Avoid', 'Bearish']);
+
+    const positiveAuthors = [];
+    const negativeAuthors = [];
+
+    player.author_takes_map.forEach((authData, authName) => {
+      let isPos = false;
+      let isNeg = false;
+      authData.stances.forEach(s => {
+        if (positiveSet.has(s)) isPos = true;
+        if (negativeSet.has(s)) isNeg = true;
+      });
+      if (isPos) positiveAuthors.push(authName);
+      if (isNeg) negativeAuthors.push(authName);
+    });
 
     const reasons = [];
     player.author_takes_map.forEach(auth => {
@@ -894,10 +912,20 @@ document.addEventListener('DOMContentLoaded', () => {
       if (t) targetList.push(t);
     });
 
-    const mainReason = reasons.length > 0 ? reasons[0] : 'strong analytical consensus';
+    const mainReason = reasons.length > 0 ? reasons[0] : 'key analytical drivers';
     const mainTarget = targetList.length > 0 ? ` | Target: ${targetList[0]}` : '';
 
-    return `${primaryStance} by ${authors.join(', ')} — ${mainReason}${mainTarget}`;
+    if (consensusInfo.type === 'SPLIT') {
+      const posStr = positiveAuthors.length > 0 ? positiveAuthors.join(' & ') : 'Some Analysts';
+      const negStr = negativeAuthors.length > 0 ? negativeAuthors.join(' & ') : 'Other Analysts';
+      return `Analyst Split: ${posStr} recommend Target/Must-Draft, but ${negStr} recommend Avoid — ${mainReason}${mainTarget}`;
+    } else if (consensusInfo.type === 'FADE') {
+      const negStr = negativeAuthors.length > 0 ? negativeAuthors.join(' & ') : Array.from(player.author_takes_map.keys()).join(' & ');
+      return `Unanimous Avoid by ${negStr} — ${mainReason}${mainTarget}`;
+    } else {
+      const posStr = positiveAuthors.length > 0 ? positiveAuthors.join(' & ') : Array.from(player.author_takes_map.keys()).join(' & ');
+      return `Consensus Target by ${posStr} — ${mainReason}${mainTarget}`;
+    }
   }
 
   // Open Consolidated Multi-Author Consensus Modal
