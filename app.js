@@ -13,8 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentPosFilter = 'ALL';
   let currentAuthorFilter = 'ALL';
   let searchQuery = '';
-  let viewMode = localStorage.getItem('fp_view_mode') || 'list'; // 'list' or 'card'
-  let sortBy = localStorage.getItem('fp_sort_by') || 'adp'; // 'adp', 'pos_rank', 'stance'
+  let sortBy = localStorage.getItem('fp_sort_by') || 'adp';
   let isSidebarCollapsed = localStorage.getItem('fp_sidebar_collapsed') === 'true';
 
   // NFL Team Bye Weeks Database
@@ -44,8 +43,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const searchInput = document.getElementById('searchInput');
   const sortBySelect = document.getElementById('sortBySelect');
   const authorFilterSelect = document.getElementById('authorFilterSelect');
-  const viewListBtn = document.getElementById('viewListBtn');
-  const viewCardBtn = document.getElementById('viewCardBtn');
   const resetDraftBtn = document.getElementById('resetDraftBtn');
   const posChips = document.querySelectorAll('.pos-chip');
   const activeCountEl = document.getElementById('activeCount');
@@ -129,7 +126,6 @@ document.addEventListener('DOMContentLoaded', () => {
     .then(([players, projections]) => {
       sleeperAdpMap.clear();
 
-      // Map player_id -> ADP stat value (PPR first)
       const adpByPlayerId = new Map();
       if (Array.isArray(projections)) {
         projections.forEach(item => {
@@ -142,7 +138,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
 
-      // Build sorted list of active players with true ADP
       const sortedPlayers = Object.values(players)
         .filter(p => p && p.full_name && p.position)
         .map(p => {
@@ -227,7 +222,8 @@ document.addEventListener('DOMContentLoaded', () => {
           fp_overall_rank: take.fp_overall_rank || null,
           fp_pos_rank: take.fp_pos_rank || null,
           raw_takes: [],
-          author_takes_map: new Map()
+          author_takes_map: new Map(),
+          author_pos_ranks: new Map()
         });
       }
 
@@ -235,10 +231,23 @@ document.addEventListener('DOMContentLoaded', () => {
       playerObj.raw_takes.push(take);
 
       if (take.fp_overall_rank) playerObj.fp_overall_rank = take.fp_overall_rank;
-      if (take.fp_pos_rank) playerObj.fp_pos_rank = take.fp_pos_rank;
+      if (take.fp_pos_rank) {
+        playerObj.fp_pos_rank = take.fp_pos_rank;
+        const numMatch = take.fp_pos_rank.match(/\d+/);
+        if (numMatch) playerObj.fp_pos_num = parseInt(numMatch[0], 10);
+      }
 
       const author = take.author || 'FantasyPoints Staff';
       allAuthors.add(author);
+
+      if (take.fp_pos_rank) {
+        const numMatch = take.fp_pos_rank.match(/\d+/);
+        const posNum = numMatch ? parseInt(numMatch[0], 10) : 99;
+        playerObj.author_pos_ranks.set(author, {
+          pos_rank: take.fp_pos_rank,
+          pos_num: posNum
+        });
+      }
 
       if (!playerObj.author_takes_map.has(author)) {
         playerObj.author_takes_map.set(author, {
@@ -279,9 +288,25 @@ document.addEventListener('DOMContentLoaded', () => {
       authorFilterSelect.value = selected;
     }
 
+    if (sortBySelect) {
+      const currentSort = sortBySelect.value || 'adp';
+      sortBySelect.innerHTML = `
+        <option value="adp">Sort: Sleeper PPR ADP</option>
+        <option value="pos_rank">Sort: FP Consensus Positional Rank</option>
+        <option value="stance">Sort: 🔥 Stance (Must-Draft First)</option>
+      `;
+      Array.from(allAuthors).sort().forEach(auth => {
+        const opt = document.createElement('option');
+        opt.value = `author_pos_${auth}`;
+        opt.textContent = `Sort: ✍️ ${auth} Positional Rank`;
+        sortBySelect.appendChild(opt);
+      });
+      sortBySelect.value = currentSort;
+    }
+
     groupedPlayersMap.forEach(p => {
       p.display_pos_rank = p.fp_pos_rank || p.pos_rank || `${p.position}`;
-      p.fp_pos_num = p.fp_overall_rank || p.pos_num;
+      p.fp_pos_num = p.fp_pos_num || p.pos_num;
     });
   }
 
@@ -320,24 +345,25 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // Context-Aware Sorting
+    // Context-Aware Positional Sorting
     playersArray.sort((a, b) => {
-      if (sortBy === 'rank') {
-        if (currentPosFilter !== 'ALL' && currentPosFilter !== 'DECK') {
-          return (a.fp_pos_num || a.pos_num) - (b.fp_pos_num || b.pos_num);
-        } else {
-          const rankA = a.fp_overall_rank || a.sleeper_adp;
-          const rankB = b.fp_overall_rank || b.sleeper_adp;
-          return rankA - rankB;
-        }
-      } else if (sortBy === 'adp') {
+      if (sortBy.startsWith('author_pos_')) {
+        const targetAuthor = sortBy.replace('author_pos_', '');
+        const rankA = a.author_pos_ranks?.get(targetAuthor)?.pos_num || a.fp_pos_num || a.pos_num;
+        const rankB = b.author_pos_ranks?.get(targetAuthor)?.pos_num || b.fp_pos_num || b.pos_num;
+        if (rankA !== rankB) return rankA - rankB;
+        return a.sleeper_adp - b.sleeper_adp;
+      } else if (sortBy === 'pos_rank' || sortBy === 'rank') {
+        const rankA = a.fp_pos_num || a.pos_num;
+        const rankB = b.fp_pos_num || b.pos_num;
+        if (rankA !== rankB) return rankA - rankB;
         return a.sleeper_adp - b.sleeper_adp;
       } else if (sortBy === 'stance') {
         const stanceA = getPrimaryStanceForPlayer(a);
         const stanceB = getPrimaryStanceForPlayer(b);
-        const hierarchy = { 'Must-Draft': 1, 'Breakout': 2, 'Bullish': 3, 'Sleeper': 4, 'Bearish': 5, 'Avoid': 6 };
-        const scoreA = hierarchy[stanceA] || 7;
-        const scoreB = hierarchy[stanceB] || 7;
+        const hierarchy = { 'Exodia': 1, 'Must-Draft': 2, 'Hansen 50': 3, 'Hansen-50': 3, 'Breakout': 4, 'Bullish': 5, 'Sleeper': 6, 'Dirty Thirty': 7, 'Dirty-Thirty': 7, 'Bearish': 8, 'Avoid': 9 };
+        const scoreA = hierarchy[stanceA] || 10;
+        const scoreB = hierarchy[stanceB] || 10;
         if (scoreA !== scoreB) return scoreA - scoreB;
         return a.sleeper_adp - b.sleeper_adp;
       }
@@ -368,14 +394,13 @@ document.addEventListener('DOMContentLoaded', () => {
     updateCompareFloatingBar();
   }
 
-  // Helper: Consolidate & Clean Target Round Advice (No Tiers, No Redundancy)
+  // Helper: Consolidate & Clean Target Round Advice
   function consolidateTargetRoundAdvice(rawList) {
     if (!rawList || rawList.length === 0) return '';
 
     const cleaned = [];
     rawList.forEach(rawStr => {
       if (!rawStr) return;
-      // Strip out tier mentions, ADP QB tags, and bracket noise
       let str = rawStr
         .replace(/tier\s*\d+/gi, '')
         .replace(/\(adp\s*[^)]*\)/gi, '')
@@ -484,6 +509,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Create Compact Row
   function createCompactPlayerRow(player, isDraftedMe, isDraftedOther) {
     const row = document.createElement('div');
+    const isDrafted = isDraftedMe || isDraftedOther;
 
     let draftClass = '';
     if (isDraftedMe) draftClass = 'drafted-me';
@@ -510,6 +536,16 @@ document.addEventListener('DOMContentLoaded', () => {
       stancePills.push(`<span class="badge-stance ${consensusInfo.class}">${consensusInfo.label}</span>`);
     }
 
+    let displayedPosBadge = player.display_pos_rank || player.pos_rank;
+    if (sortBy.startsWith('author_pos_')) {
+      const targetAuthor = sortBy.replace('author_pos_', '');
+      const authPosObj = player.author_pos_ranks?.get(targetAuthor);
+      if (authPosObj) {
+        const shortAuthor = targetAuthor.split(' ')[0];
+        displayedPosBadge = `${shortAuthor}: ${authPosObj.pos_rank}`;
+      }
+    }
+
     row.innerHTML = `
       <div class="row-left">
         <button class="btn-star ${isStarred ? 'starred' : ''}" data-player="${escapeHtml(player.canonical_key)}" onclick="event.stopPropagation();" title="Pin to On Deck">
@@ -525,7 +561,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </button>
         </div>
 
-        <span class="badge-pos ${player.position}">${escapeHtml(player.display_pos_rank || player.pos_rank)}</span>
+        <span class="badge-pos ${player.position}">${escapeHtml(displayedPosBadge)}</span>
 
         <div class="row-player-info">
           <div class="row-name-line">
@@ -578,230 +614,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return row;
   }
 
-  // Create Standard Detailed Card
-  function createPlayerCard(player, isDraftedMe, isDraftedOther) {
-    const card = document.createElement('div');
-
-    let draftClass = '';
-    if (isDraftedMe) draftClass = 'drafted-me';
-    else if (isDraftedOther) draftClass = 'drafted-other';
-
-    card.className = `player-card ${draftClass}`;
-    card.setAttribute('data-player', player.canonical_key);
-
-    const consensusInfo = evaluatePlayerConsensus(player);
-    const signatureStances = getSignatureStances(player);
-
-    const stancePills = [];
-    signatureStances.forEach(sig => {
-      stancePills.push(`<span class="badge-stance ${sig.replace(/\s+/g, '-')}">${getIconForStance(sig)} ${sig}</span>`);
-    });
-    if (consensusInfo.label) {
-      stancePills.push(`<span class="badge-stance ${consensusInfo.class}">${consensusInfo.label}</span>`);
-    }
-
-    card.innerHTML = `
-      <div>
-        <div class="card-header">
-          <div class="player-info-meta">
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <button class="btn-star ${isStarred ? 'starred' : ''}" onclick="event.stopPropagation();">
-                ${isStarred ? '⭐' : '☆'}
-              </button>
-              <span class="player-name ${isDraftedOther ? 'card-drafted-strike' : ''}">${escapeHtml(player.player_name)}</span>
-            </div>
-            <div class="team-pos-row">
-              <span class="badge-pos ${player.position}">${escapeHtml(player.display_pos_rank || player.pos_rank)}</span>
-              <span class="team-name">${escapeHtml(player.team)}</span>
-              <span class="adp-tag" style="margin-left: 4px;">Sleeper: #${player.sleeper_adp}</span>
-            </div>
-          </div>
-          
-          <div class="card-actions">
-            <div class="draft-action-group">
-              <button class="btn-draft-me ${isDraftedMe ? 'active' : ''}" onclick="event.stopPropagation();">ME</button>
-              <button class="btn-draft-other ${isDraftedOther ? 'active' : ''}" onclick="event.stopPropagation();">OFF</button>
-            </div>
-            <label class="compare-checkbox-label" onclick="event.stopPropagation();">
-              <input type="checkbox" class="compare-checkbox" ${isCheckedForCompare ? 'checked' : ''}>
-              <span>VS</span>
-            </label>
-          </div>
-        </div>
-
-        <div class="card-body">
-          <div class="stance-pill-row">
-            ${stancePills.join('')}
-            ${topTargetStr ? `<span class="tier-text">🎯 ${escapeHtml(topTargetStr)}</span>` : ''}
-          </div>
-
-          ${upsideSample ? `
-            <div class="upside-teaser">
-              💡 <strong>Takeaway:</strong> ${escapeHtml(upsideSample)}
-            </div>
-          ` : ''}
-        </div>
-      </div>
-
-      <div class="author-avatars" style="margin-top: 10px;">
-        <div class="author-avatar-dot">${authors.length}</div>
-        <span>✍️ Approved by ${authors.join(', ')} (${player.raw_takes.length} takes)</span>
-      </div>
-    `;
-
-    card.addEventListener('click', () => openPlayerModal(player));
-    card.querySelector('.btn-star').addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleStarStatus(player.canonical_key);
-    });
-    card.querySelector('.btn-draft-me').addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleDraftForMe(player.canonical_key);
-    });
-    card.querySelector('.btn-draft-other').addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleDraftForOther(player.canonical_key);
-    });
-    card.querySelector('.compare-checkbox').addEventListener('change', (e) => {
-      e.stopPropagation();
-      toggleCompareSelection(player.canonical_key, e.target.checked);
-    });
-
-    return card;
-  }
-
-  // Render Content inside Right Roster Sidebar Panel
-  function renderRosterSidebarContent() {
-    if (!sidebarRosterList) return;
-    sidebarRosterList.innerHTML = '';
-    byeWarningArea.innerHTML = '';
-    needWarningArea.innerHTML = '';
-
-    const myPlayers = Array.from(myRosterPlayers).map(k => groupedPlayersMap.get(k)).filter(Boolean);
-
-    // Bye Week Conflicts
-    const byeCount = {};
-    myPlayers.forEach(p => {
-      const bye = TEAM_BYE_WEEKS[p.team];
-      if (bye) byeCount[bye] = (byeCount[bye] || 0) + 1;
-    });
-
-    const heavyByes = Object.entries(byeCount).filter(([bye, count]) => count >= 2);
-    if (heavyByes.length > 0) {
-      byeWarningArea.innerHTML = heavyByes.map(([bye, count]) => `
-        <div class="bye-warning-banner">
-          ⚠️ <strong>Bye Conflict:</strong> ${count} starters on <strong>Wk ${bye} Bye</strong>
-        </div>
-      `).join('');
-    }
-
-    // Positional Needs
-    const posCounts = { QB: 0, RB: 0, WR: 0, TE: 0 };
-    myPlayers.forEach(p => { if (posCounts[p.position] !== undefined) posCounts[p.position]++; });
-
-    const missingNeeds = [];
-    if (posCounts.QB < 1) missingNeeds.push('QB1');
-    if (posCounts.RB < 2) missingNeeds.push(`RB${posCounts.RB + 1}`);
-    if (posCounts.WR < 2) missingNeeds.push(`WR${posCounts.WR + 1}`);
-    if (posCounts.TE < 1) missingNeeds.push('TE1');
-
-    if (missingNeeds.length > 0) {
-      needWarningArea.innerHTML = `
-        <div class="need-warning-banner">
-          🎯 <strong>Need:</strong> ${missingNeeds.join(', ')}
-        </div>
-      `;
-    }
-
-    // Roster Slot Layout
-    const slots = [
-      { label: 'QB1', pos: 'QB' },
-      { label: 'RB1', pos: 'RB' },
-      { label: 'RB2', pos: 'RB' },
-      { label: 'WR1', pos: 'WR' },
-      { label: 'WR2', pos: 'WR' },
-      { label: 'TE1', pos: 'TE' },
-      { label: 'FLEX1', pos: 'FLEX' },
-      { label: 'FLEX2', pos: 'FLEX' },
-      { label: 'BN1', pos: 'BENCH' },
-      { label: 'BN2', pos: 'BENCH' },
-      { label: 'BN3', pos: 'BENCH' },
-      { label: 'BN4', pos: 'BENCH' },
-      { label: 'BN5', pos: 'BENCH' }
-    ];
-
-    const filledPlayers = new Set();
-
-    slots.forEach(slot => {
-      const row = document.createElement('div');
-      row.className = 'sidebar-slot-row';
-
-      let matchedPlayer = null;
-
-      if (slot.pos !== 'FLEX' && slot.pos !== 'BENCH') {
-        matchedPlayer = myPlayers.find(p => p.position === slot.pos && !filledPlayers.has(p.canonical_key));
-      } else if (slot.pos === 'FLEX') {
-        matchedPlayer = myPlayers.find(p => (p.position === 'RB' || p.position === 'WR' || p.position === 'TE') && !filledPlayers.has(p.canonical_key));
-      } else {
-        matchedPlayer = myPlayers.find(p => !filledPlayers.has(p.canonical_key));
-      }
-
-      if (matchedPlayer) {
-        filledPlayers.add(matchedPlayer.canonical_key);
-        const bye = TEAM_BYE_WEEKS[matchedPlayer.team] ? `Wk ${TEAM_BYE_WEEKS[matchedPlayer.team]}` : '';
-        row.innerHTML = `
-          <span class="sidebar-slot-label">${slot.label}</span>
-          <span class="sidebar-slot-player">${escapeHtml(matchedPlayer.player_name)}</span>
-          <span class="badge-pos ${matchedPlayer.position}">${matchedPlayer.position}</span>
-        `;
-      } else {
-        row.innerHTML = `
-          <span class="sidebar-slot-label">${slot.label}</span>
-          <span class="sidebar-empty-slot">Empty</span>
-        `;
-      }
-
-      sidebarRosterList.appendChild(row);
-    });
-  }
-
-  // Sidebar Visibility Toggle Handler
-  function updateSidebarVisibility() {
-    if (isSidebarCollapsed) {
-      rosterSidebar.classList.add('collapsed');
-      toggleRosterSidebarBtn.classList.remove('active');
-    } else {
-      rosterSidebar.classList.remove('collapsed');
-      toggleRosterSidebarBtn.classList.add('active');
-    }
-  }
-
-  toggleRosterSidebarBtn.addEventListener('click', () => {
-    isSidebarCollapsed = !isSidebarCollapsed;
-    localStorage.setItem('fp_sidebar_collapsed', isSidebarCollapsed ? 'true' : 'false');
-    updateSidebarVisibility();
-  });
-
-  if (closeSidebarBtn) {
-    closeSidebarBtn.addEventListener('click', () => {
-      isSidebarCollapsed = true;
-      localStorage.setItem('fp_sidebar_collapsed', 'true');
-      updateSidebarVisibility();
-    });
-  }
-
-  // Toggle Star / On Deck Status
-  function toggleStarStatus(canonicalKey) {
-    if (starredPlayers.has(canonicalKey)) {
-      starredPlayers.delete(canonicalKey);
-    } else {
-      starredPlayers.add(canonicalKey);
-    }
-    localStorage.setItem('fp_starred_players', JSON.stringify(Array.from(starredPlayers)));
-    renderPlayerBoard();
-  }
-
-  // Toggle Draft for ME
+  // Toggle Player Drafted for MY Team
   function toggleDraftForMe(canonicalKey) {
     if (myRosterPlayers.has(canonicalKey)) {
       myRosterPlayers.delete(canonicalKey);
@@ -813,7 +626,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderPlayerBoard();
   }
 
-  // Toggle Draft for OTHER
+  // Toggle Player Drafted for OTHER Team
   function toggleDraftForOther(canonicalKey) {
     if (otherDraftedPlayers.has(canonicalKey)) {
       otherDraftedPlayers.delete(canonicalKey);
@@ -822,6 +635,17 @@ document.addEventListener('DOMContentLoaded', () => {
       myRosterPlayers.delete(canonicalKey);
     }
     saveDraftStates();
+    renderPlayerBoard();
+  }
+
+  // Toggle Star / Pin Status
+  function toggleStarStatus(canonicalKey) {
+    if (starredPlayers.has(canonicalKey)) {
+      starredPlayers.delete(canonicalKey);
+    } else {
+      starredPlayers.add(canonicalKey);
+    }
+    localStorage.setItem('fp_starred_players', JSON.stringify(Array.from(starredPlayers)));
     renderPlayerBoard();
   }
 
@@ -838,6 +662,117 @@ document.addEventListener('DOMContentLoaded', () => {
     const activeAvailable = totalPlayers - (myRosterPlayers.size + otherDraftedPlayers.size);
     if (totalCountEl) totalCountEl.textContent = totalPlayers;
     if (activeCountEl) activeCountEl.textContent = activeAvailable;
+  }
+
+  function updateSidebarVisibility() {
+    if (isSidebarCollapsed) {
+      rosterSidebar.classList.add('collapsed');
+    } else {
+      rosterSidebar.classList.remove('collapsed');
+    }
+  }
+
+  function renderRosterSidebarContent() {
+    sidebarRosterList.innerHTML = '';
+    const myPlayersList = [];
+
+    myRosterPlayers.forEach(key => {
+      const p = groupedPlayersMap.get(key);
+      if (p) myPlayersList.push(p);
+    });
+
+    if (myPlayersList.length === 0) {
+      sidebarRosterList.innerHTML = `
+        <div style="font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 20px 0;">
+          No players drafted yet.<br>Click "ME" on player rows to build your roster!
+        </div>
+      `;
+      byeWarningArea.style.display = 'none';
+      needWarningArea.style.display = 'none';
+      return;
+    }
+
+    // Sort Roster by position (QB, RB, WR, TE)
+    const posOrder = { QB: 1, RB: 2, WR: 3, TE: 4, FLEX: 5 };
+    myPlayersList.sort((a, b) => (posOrder[a.position] || 99) - (posOrder[b.position] || 99));
+
+    // Bye Weeks Analysis
+    const byeMap = {};
+    const posCounts = { QB: 0, RB: 0, WR: 0, TE: 0 };
+
+    myPlayersList.forEach(p => {
+      posCounts[p.position] = (posCounts[p.position] || 0) + 1;
+      const bye = TEAM_BYE_WEEKS[p.team];
+      if (bye) {
+        if (!byeMap[bye]) byeMap[bye] = [];
+        byeMap[bye].push(p);
+      }
+
+      const item = document.createElement('div');
+      item.className = 'roster-sidebar-item';
+      item.innerHTML = `
+        <div class="roster-item-info">
+          <span class="badge-pos ${p.position}">${p.position}</span>
+          <span class="roster-item-name">${escapeHtml(p.player_name)}</span>
+          <span class="roster-item-team">${escapeHtml(p.team)}</span>
+          ${bye ? `<span class="roster-item-bye">Bye ${bye}</span>` : ''}
+        </div>
+        <button class="btn-remove-roster" data-player="${escapeHtml(p.canonical_key)}" title="Remove from Roster">✕</button>
+      `;
+
+      item.querySelector('.btn-remove-roster').addEventListener('click', () => {
+        toggleDraftForMe(p.canonical_key);
+      });
+
+      sidebarRosterList.appendChild(item);
+    });
+
+    // Check Bye Conflicts (3+ players on same bye week)
+    let byeWarningHtml = '';
+    Object.keys(byeMap).forEach(byeWeek => {
+      if (byeMap[byeWeek].length >= 3) {
+        const names = byeMap[byeWeek].map(p => p.player_name).join(', ');
+        byeWarningHtml += `⚠️ Week ${byeWeek} Bye Conflict: ${byeMap[byeWeek].length} players (${names})<br>`;
+      }
+    });
+
+    if (byeWarningHtml) {
+      byeWarningArea.innerHTML = byeWarningHtml;
+      byeWarningArea.style.display = 'block';
+    } else {
+      byeWarningArea.style.display = 'none';
+    }
+
+    // Check Roster Needs
+    let needWarningHtml = '';
+    if (posCounts.QB === 0) needWarningHtml += '🎯 Need: Quarterback (QB)<br>';
+    if (posCounts.RB < 2) needWarningHtml += `🎯 Need: ${2 - posCounts.RB} Running Back(s) (RB)<br>`;
+    if (posCounts.WR < 2) needWarningHtml += `🎯 Need: ${2 - posCounts.WR} Wide Receiver(s) (WR)<br>`;
+    if (posCounts.TE === 0) needWarningHtml += '🎯 Need: Tight End (TE)<br>';
+
+    if (needWarningHtml) {
+      needWarningArea.innerHTML = needWarningHtml;
+      needWarningArea.style.display = 'block';
+    } else {
+      needWarningArea.style.display = 'none';
+    }
+  }
+
+  // Sidebar Controls
+  if (toggleRosterSidebarBtn) {
+    toggleRosterSidebarBtn.addEventListener('click', () => {
+      isSidebarCollapsed = !isSidebarCollapsed;
+      localStorage.setItem('fp_sidebar_collapsed', isSidebarCollapsed);
+      updateSidebarVisibility();
+    });
+  }
+
+  if (closeSidebarBtn) {
+    closeSidebarBtn.addEventListener('click', () => {
+      isSidebarCollapsed = true;
+      localStorage.setItem('fp_sidebar_collapsed', 'true');
+      updateSidebarVisibility();
+    });
   }
 
   // Toggle Compare Selection
@@ -1069,7 +1004,7 @@ document.addEventListener('DOMContentLoaded', () => {
     compareModal.setAttribute('aria-hidden', 'true');
   });
 
-  // Fix 3: Global ESC Key Listener to Close Modals
+  // Global ESC Key Listener to Close Modals
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' || e.keyCode === 27) {
       playerModal.classList.remove('open');
@@ -1101,23 +1036,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Fix 4: Clear Segmented View Switch Button Handlers
-  if (viewListBtn && viewCardBtn) {
-    viewListBtn.addEventListener('click', () => {
-      viewMode = 'list';
-      localStorage.setItem('fp_view_mode', 'list');
-      updateViewToggleButtonState();
-      renderPlayerBoard();
-    });
-
-    viewCardBtn.addEventListener('click', () => {
-      viewMode = 'card';
-      localStorage.setItem('fp_view_mode', 'card');
-      updateViewToggleButtonState();
-      renderPlayerBoard();
-    });
-  }
-
   resetDraftBtn.addEventListener('click', () => {
     if (confirm('Reset all drafted player statuses & rosters?')) {
       myRosterPlayers.clear();
@@ -1138,18 +1056,6 @@ document.addEventListener('DOMContentLoaded', () => {
       renderPlayerBoard();
     });
   });
-
-  function updateViewToggleButtonState() {
-    if (viewListBtn && viewCardBtn) {
-      if (viewMode === 'list') {
-        viewListBtn.classList.add('active');
-        viewCardBtn.classList.remove('active');
-      } else {
-        viewCardBtn.classList.add('active');
-        viewListBtn.classList.remove('active');
-      }
-    }
-  }
 
   function getPrimaryStanceForPlayer(player) {
     const allStances = [];

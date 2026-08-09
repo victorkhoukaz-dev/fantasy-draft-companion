@@ -267,6 +267,8 @@ def ingest_pdfs(force=False):
     - key_reason: Detailed core analytical reason for the stance
     - upside_metric: Specific statistical metric, projection, or efficiency metric showing upside
     - risk_factor: Specific risk factor or downside concern
+    - fp_pos_rank: Author's explicit positional rank if present in page or guide (e.g. 'RB1', 'RB12', 'WR4', 'QB6')
+    - fp_overall_rank: Author's explicit overall rank number if present
     """
 
     models_to_try = ["gemini-flash-latest", "gemini-3.6-flash", "gemini-2.0-flash", "gemini-3.5-flash"]
