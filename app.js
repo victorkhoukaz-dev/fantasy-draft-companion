@@ -1119,7 +1119,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function escapeHtml(str) {
     if (!str) return '';
     return str.replace(/[&<>"']/g, match => {
-      const escapeMap = { '&': '&amp;', '<': '&lt;'>: '&gt;', '"': '&quot;', "'": '&#39;' };
+      const escapeMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
       return escapeMap[match];
     });
   }
