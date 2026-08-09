@@ -804,7 +804,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Helper: Generate Smart AI Executive Consensus Synthesis
+  // Helper: Generate Smart AI Executive Consensus Synthesis (Ultra-Compact 1-Liner)
   function generateAiConsensusSummary(player) {
     if (player.ai_consensus_summary) return player.ai_consensus_summary;
 
@@ -818,24 +818,16 @@ document.addEventListener('DOMContentLoaded', () => {
       if (auth.reasons.length > 0) reasons.push(auth.reasons[0]);
     });
 
-    const upsideList = [];
-    player.author_takes_map.forEach(auth => {
-      if (auth.upside_metrics.length > 0) upsideList.push(auth.upside_metrics[0]);
-    });
-
     const targetList = [];
     player.author_takes_map.forEach(auth => {
       const t = consolidateTargetRoundAdvice(Array.from(auth.tiers));
       if (t) targetList.push(t);
     });
 
-    const authorStr = authors.join(' & ');
-    const stanceStr = primaryStance;
-    const mainReason = reasons.length > 0 ? reasons[0] : 'strong analytical fundamentals';
-    const mainUpside = upsideList.length > 0 ? ` Ceiling factor: ${upsideList[0]}.` : '';
-    const mainTarget = targetList.length > 0 ? ` Target timing: ${targetList[0]}.` : '';
+    const mainReason = reasons.length > 0 ? reasons[0] : 'strong analytical consensus';
+    const mainTarget = targetList.length > 0 ? ` | Target: ${targetList[0]}` : '';
 
-    return `FantasyPoints analysts (${authorStr}) hold a consensus ${stanceStr} stance on ${player.player_name}. Key driver: ${mainReason}.${mainUpside}${mainTarget}`;
+    return `${primaryStance} by ${authors.join(', ')} — ${mainReason}${mainTarget}`;
   }
 
   // Open Consolidated Multi-Author Consensus Modal
@@ -1091,7 +1083,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getPrimaryStance(stancesArr) {
     if (!stancesArr || stancesArr.length === 0) return 'Bullish';
-    const hierarchy = ['Must-Draft', 'Breakout', 'Bullish', 'Sleeper', 'Bearish', 'Avoid'];
+    const hierarchy = ['Exodia', 'Must-Draft', 'Hansen 50', 'Hansen-50', 'Breakout', 'Bullish', 'Sleeper', 'Dirty Thirty', 'Dirty-Thirty', 'Bearish', 'Avoid'];
     for (const h of hierarchy) {
       if (stancesArr.includes(h)) return h;
     }
@@ -1099,15 +1091,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function getIconForStance(stance) {
-    switch (stance) {
-      case 'Must-Draft': return '🔥';
-      case 'Bullish': return '📈';
-      case 'Breakout': return '⚡';
-      case 'Sleeper': return '💎';
-      case 'Avoid':
-      case 'Bearish': return '🛑';
-      default: return '📌';
-    }
+    if (!stance) return '📌';
+    const s = stance.toLowerCase();
+    if (s.includes('exodia')) return '✨';
+    if (s.includes('hansen')) return '🎯';
+    if (s.includes('dirty')) return '☣️';
+    if (s.includes('must')) return '🔥';
+    if (s.includes('bull')) return '📈';
+    if (s.includes('break')) return '⚡';
+    if (s.includes('sleep')) return '💎';
+    if (s.includes('avoid') || s.includes('bear')) return '🛑';
+    return '📌';
   }
 
   function escapeHtml(str) {
