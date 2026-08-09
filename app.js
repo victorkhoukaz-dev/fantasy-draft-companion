@@ -299,8 +299,28 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Update Sort Options State (Lock positional sorts on ALL or DECK tabs)
+  function updateSortOptionsState() {
+    if (!sortBySelect) return;
+    const isGlobalView = (currentPosFilter === 'ALL' || currentPosFilter === 'DECK');
+
+    Array.from(sortBySelect.options).forEach(opt => {
+      if (opt.value.startsWith('author_pos_')) {
+        opt.disabled = isGlobalView;
+      }
+    });
+
+    if (isGlobalView && sortBy.startsWith('author_pos_')) {
+      sortBy = 'adp';
+      sortBySelect.value = 'adp';
+      localStorage.setItem('fp_sort_by', 'adp');
+    }
+  }
+
   // Render Player Board & Sidebar Panel
   function renderPlayerBoard() {
+    updateSortOptionsState();
+
     playerGrid.innerHTML = '';
     playerGrid.className = 'player-list-view';
 
@@ -1099,7 +1119,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function escapeHtml(str) {
     if (!str) return '';
     return str.replace(/[&<>"']/g, match => {
-      const escapeMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+      const escapeMap = { '&': '&amp;', '<': '&lt;'>: '&gt;', '"': '&quot;', "'": '&#39;' };
       return escapeMap[match];
     });
   }
