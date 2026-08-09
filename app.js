@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let selectedForCompare = new Set(); // max 3 player_names
   
   let currentPosFilter = 'ALL';
+  let currentAuthorFilter = 'ALL';
   let searchQuery = '';
   let hideDrafted = localStorage.getItem('fp_hide_drafted') === 'true';
   let viewMode = localStorage.getItem('fp_view_mode') || 'list'; // 'list' or 'card'
@@ -43,6 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const emptyState = document.getElementById('emptyState');
   const searchInput = document.getElementById('searchInput');
   const sortBySelect = document.getElementById('sortBySelect');
+  const authorFilterSelect = document.getElementById('authorFilterSelect');
   const viewListBtn = document.getElementById('viewListBtn');
   const viewCardBtn = document.getElementById('viewCardBtn');
   const hideDraftedBtn = document.getElementById('hideDraftedBtn');
@@ -198,6 +200,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Process & Group Takes Data
   function processTakesData(takes) {
     groupedPlayersMap.clear();
+    const allAuthors = new Set();
 
     takes.forEach(take => {
       const rawName = take.player_name ? take.player_name.trim() : 'Unknown Player';
@@ -233,6 +236,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (take.fp_pos_rank) playerObj.fp_pos_rank = take.fp_pos_rank;
 
       const author = take.author || 'FantasyPoints Staff';
+      allAuthors.add(author);
+
       if (!playerObj.author_takes_map.has(author)) {
         playerObj.author_takes_map.set(author, {
           author: author,
@@ -246,7 +251,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const authorConsolidated = playerObj.author_takes_map.get(author);
       if (take.stance) authorConsolidated.stances.add(take.stance);
-      if (take.tier_or_target_round) authorConsolidated.tiers.add(take.tier_or_target_round);
+      if (take.target_round_advice || take.tier_or_target_round) {
+        authorConsolidated.tiers.add(take.target_round_advice || take.tier_or_target_round);
+      }
       if (take.key_reason && !authorConsolidated.reasons.includes(take.key_reason)) {
         authorConsolidated.reasons.push(take.key_reason);
       }
@@ -257,6 +264,18 @@ document.addEventListener('DOMContentLoaded', () => {
         authorConsolidated.risk_factors.push(take.risk_factor);
       }
     });
+
+    if (authorFilterSelect) {
+      const selected = authorFilterSelect.value || 'ALL';
+      authorFilterSelect.innerHTML = '<option value="ALL">✍️ All Analysts</option>';
+      Array.from(allAuthors).sort().forEach(auth => {
+        const opt = document.createElement('option');
+        opt.value = auth;
+        opt.textContent = `✍️ ${auth}`;
+        authorFilterSelect.appendChild(opt);
+      });
+      authorFilterSelect.value = selected;
+    }
 
     groupedPlayersMap.forEach(p => {
       p.display_pos_rank = p.fp_pos_rank || p.pos_rank || `${p.position}`;
@@ -281,6 +300,11 @@ document.addEventListener('DOMContentLoaded', () => {
       playersArray = playersArray.filter(p => starredPlayers.has(p.canonical_key));
     } else if (currentPosFilter !== 'ALL') {
       playersArray = playersArray.filter(p => p.position === currentPosFilter);
+    }
+
+    // Author Filter
+    if (currentAuthorFilter !== 'ALL') {
+      playersArray = playersArray.filter(p => p.author_takes_map.has(currentAuthorFilter));
     }
 
     // Search Query Filter
@@ -780,6 +804,40 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Helper: Generate Smart AI Executive Consensus Synthesis
+  function generateAiConsensusSummary(player) {
+    if (player.ai_consensus_summary) return player.ai_consensus_summary;
+
+    const authors = Array.from(player.author_takes_map.keys());
+    const allStances = [];
+    player.author_takes_map.forEach(auth => auth.stances.forEach(s => allStances.push(s)));
+    const primaryStance = getPrimaryStance(allStances);
+
+    const reasons = [];
+    player.author_takes_map.forEach(auth => {
+      if (auth.reasons.length > 0) reasons.push(auth.reasons[0]);
+    });
+
+    const upsideList = [];
+    player.author_takes_map.forEach(auth => {
+      if (auth.upside_metrics.length > 0) upsideList.push(auth.upside_metrics[0]);
+    });
+
+    const targetList = [];
+    player.author_takes_map.forEach(auth => {
+      const t = consolidateTargetRoundAdvice(Array.from(auth.tiers));
+      if (t) targetList.push(t);
+    });
+
+    const authorStr = authors.join(' & ');
+    const stanceStr = primaryStance;
+    const mainReason = reasons.length > 0 ? reasons[0] : 'strong analytical fundamentals';
+    const mainUpside = upsideList.length > 0 ? ` Ceiling factor: ${upsideList[0]}.` : '';
+    const mainTarget = targetList.length > 0 ? ` Target timing: ${targetList[0]}.` : '';
+
+    return `FantasyPoints analysts (${authorStr}) hold a consensus ${stanceStr} stance on ${player.player_name}. Key driver: ${mainReason}.${mainUpside}${mainTarget}`;
+  }
+
   // Open Consolidated Multi-Author Consensus Modal
   function openPlayerModal(player) {
     const isDraftedMe = myRosterPlayers.has(player.canonical_key);
@@ -790,6 +848,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const allStances = [];
     player.author_takes_map.forEach(auth => auth.stances.forEach(s => allStances.push(s)));
     const primaryStance = getPrimaryStance(allStances);
+    const aiSummaryText = generateAiConsensusSummary(player);
 
     modalContent.innerHTML = `
       <div class="modal-header-main">
@@ -803,14 +862,14 @@ document.addEventListener('DOMContentLoaded', () => {
         <h2 class="modal-player-title">${escapeHtml(player.player_name)}</h2>
       </div>
 
-      <!-- Consensus Overview Box -->
-      <div style="background: linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(168, 85, 247, 0.12)); border: 1px solid var(--border-glow); border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-          <span style="font-weight: 800; font-size: 0.85rem; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.05em;">🧠 FantasyPoints Consensus</span>
+      <!-- AI Executive Consensus Overview Box -->
+      <div style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(56, 189, 248, 0.15)); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px; box-shadow: 0 0 15px rgba(16, 185, 129, 0.15);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="font-weight: 800; font-size: 0.85rem; color: #6ee7b7; text-transform: uppercase; letter-spacing: 0.05em;">🤖 AI Executive Consensus</span>
           <span class="badge-stance ${primaryStance}">${getIconForStance(primaryStance)} ${primaryStance}</span>
         </div>
-        <p style="font-size: 0.85rem; color: #e2e8f0; line-height: 1.4;">
-          Covered by <strong>${authors.join(', ')}</strong> across ${player.raw_takes.length} analytical takes.
+        <p style="font-size: 0.88rem; color: #f1f5f9; line-height: 1.45; font-weight: 500;">
+          ${escapeHtml(aiSummaryText)}
         </p>
       </div>
 

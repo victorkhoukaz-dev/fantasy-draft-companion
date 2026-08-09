@@ -45,7 +45,7 @@
       
       <select id="sortBySelect" class="select-control" title="Sort Board">
         <option value="adp">Sort: Sleeper PPR ADP</option>
-        <option value="pos_rank">Sort: Positional Rank (RB1, WR1...)</option>
+        <option value="pos_rank">Sort: FP Positional Rank (RB1, WR1...)</option>
         <option value="stance">Sort: 🔥 Stance (Must-Draft First)</option>
       </select>
 
@@ -64,7 +64,7 @@
       </button>
     </div>
 
-    <!-- Position Quick-Filter Chips -->
+    <!-- Position & Author Filter Chips -->
     <nav class="filter-row">
       <button class="pos-chip active" data-pos="ALL">ALL</button>
       <button class="pos-chip" data-pos="DECK">⭐ On Deck (<span id="starredCount">0</span>)</button>
@@ -72,6 +72,12 @@
       <button class="pos-chip" data-pos="RB">RB</button>
       <button class="pos-chip" data-pos="WR">WR</button>
       <button class="pos-chip" data-pos="TE">TE</button>
+
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 6px;">
+        <select id="authorFilterSelect" class="select-control" style="font-size: 0.75rem; padding: 4px 8px;" title="Filter by Analyst">
+          <option value="ALL">✍️ All Analysts</option>
+        </select>
+      </div>
     </nav>
   </header>
 
