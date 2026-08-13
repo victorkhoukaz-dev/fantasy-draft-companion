@@ -228,7 +228,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const playerObj = groupedPlayersMap.get(canonicalKey);
       playerObj.raw_takes.push(take);
 
-      // Store author positional rank if present
+      // Store author positional rank if present (used for sorting & row badges)
       if (take.fp_pos_rank) {
         const numMatch = take.fp_pos_rank.match(/\d+/);
         const posNum = numMatch ? parseInt(numMatch[0], 10) : 99;
@@ -239,33 +239,43 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
 
-      const author = take.author || 'FantasyPoints Staff';
-      allAuthors.add(author);
+      // Check if take is a generic CSV ranking entry (no written commentary)
+      const isGenericCsvRank = take.is_official_ranking && 
+        (!take.stance || take.stance === 'Bullish') && 
+        (!take.key_reason || take.key_reason.startsWith('Official '));
+      
+      const isFlagshipStance = ['Exodia', 'Hansen 50', 'Hansen-50', 'Dirty Thirty', 'Dirty-Thirty'].includes(take.stance);
 
-      if (!playerObj.author_takes_map.has(author)) {
-        playerObj.author_takes_map.set(author, {
-          author: author,
-          stances: new Set(),
-          tiers: new Set(),
-          reasons: [],
-          upside_metrics: [],
-          risk_factors: []
-        });
-      }
+      // Only add to author_takes_map if it's a real article take OR a flagship stance!
+      if (!isGenericCsvRank || isFlagshipStance) {
+        const author = take.author || 'FantasyPoints Staff';
+        allAuthors.add(author);
 
-      const authorConsolidated = playerObj.author_takes_map.get(author);
-      if (take.stance) authorConsolidated.stances.add(take.stance);
-      if (take.target_round_advice || take.tier_or_target_round) {
-        authorConsolidated.tiers.add(take.target_round_advice || take.tier_or_target_round);
-      }
-      if (take.key_reason && !authorConsolidated.reasons.includes(take.key_reason)) {
-        authorConsolidated.reasons.push(take.key_reason);
-      }
-      if (take.upside_metric && !authorConsolidated.upside_metrics.includes(take.upside_metric)) {
-        authorConsolidated.upside_metrics.push(take.upside_metric);
-      }
-      if (take.risk_factor && !authorConsolidated.risk_factors.includes(take.risk_factor)) {
-        authorConsolidated.risk_factors.push(take.risk_factor);
+        if (!playerObj.author_takes_map.has(author)) {
+          playerObj.author_takes_map.set(author, {
+            author: author,
+            stances: new Set(),
+            tiers: new Set(),
+            reasons: [],
+            upside_metrics: [],
+            risk_factors: []
+          });
+        }
+
+        const authorConsolidated = playerObj.author_takes_map.get(author);
+        if (take.stance) authorConsolidated.stances.add(take.stance);
+        if (take.target_round_advice || take.tier_or_target_round) {
+          authorConsolidated.tiers.add(take.target_round_advice || take.tier_or_target_round);
+        }
+        if (take.key_reason && !take.key_reason.startsWith('Official ') && !authorConsolidated.reasons.includes(take.key_reason)) {
+          authorConsolidated.reasons.push(take.key_reason);
+        }
+        if (take.upside_metric && !take.upside_metric.startsWith('Official ') && !authorConsolidated.upside_metrics.includes(take.upside_metric)) {
+          authorConsolidated.upside_metrics.push(take.upside_metric);
+        }
+        if (take.risk_factor && !authorConsolidated.risk_factors.includes(take.risk_factor)) {
+          authorConsolidated.risk_factors.push(take.risk_factor);
+        }
       }
     });
 
@@ -458,7 +468,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return `#${rounded} (Rd ${round}.${pickInRound})`;
   }
 
-  // Helper: Evaluate Global Analyst Consensus & Conflicts
+  // Helper: Evaluate Global Analyst Consensus & Conflicts (Written Articles Only)
   function evaluatePlayerConsensus(player) {
     const allStances = [];
     player.author_takes_map.forEach(auth => auth.stances.forEach(s => allStances.push(s)));
@@ -601,7 +611,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
           <div class="row-sub-line">
             <span class="adp-tag">Sleeper: ${adpDisplay}</span>
-            <span class="author-approval-tag">✍️ ${authors.join(', ')}</span>
+            ${authors.length > 0 ? `<span class="author-approval-tag">✍️ ${authors.join(', ')}</span>` : ''}
             ${topTargetStr ? `<span class="tier-tag">🎯 ${escapeHtml(topTargetStr)}</span>` : ''}
           </div>
         </div>
@@ -882,9 +892,15 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (consensusInfo.type === 'FADE') {
       const negStr = negativeAuthors.length > 0 ? negativeAuthors.join(' & ') : Array.from(player.author_takes_map.keys()).join(' & ');
       return `Unanimous Avoid by ${negStr} — ${mainReason}${mainTarget}`;
-    } else {
+    } else if (consensusInfo.type === 'BULLISH') {
       const posStr = positiveAuthors.length > 0 ? positiveAuthors.join(' & ') : Array.from(player.author_takes_map.keys()).join(' & ');
       return `Consensus Target by ${posStr} — ${mainReason}${mainTarget}`;
+    } else {
+      if (player.author_pos_ranks && player.author_pos_ranks.size > 0) {
+        const ranksStr = Array.from(player.author_pos_ranks.entries()).map(([auth, info]) => `${auth.split(' ')[0]}: ${info.pos_rank}`).join(', ');
+        return `Official Ranks: ${ranksStr}. No written article commentary available.`;
+      }
+      return `No specific written article commentary available for this player.`;
     }
   }
 
@@ -894,9 +910,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const isDraftedOther = otherDraftedPlayers.has(player.canonical_key);
     const adpDisplay = format12TeamAdpDisplay(player.sleeper_adp);
 
-    const authors = Array.from(player.author_takes_map.keys());
     const consensusInfo = evaluatePlayerConsensus(player);
     const aiSummaryText = generateAiConsensusSummary(player);
+    const hasArticleTakes = player.author_takes_map.size > 0;
 
     modalContent.innerHTML = `
       <div class="modal-header-main">
@@ -910,65 +926,87 @@ document.addEventListener('DOMContentLoaded', () => {
         <h2 class="modal-player-title">${escapeHtml(player.player_name)}</h2>
       </div>
 
-      <!-- AI Executive Consensus Overview Box -->
-      <div style="${consensusInfo.boxStyle} border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <span style="font-weight: 800; font-size: 0.85rem; color: ${consensusInfo.titleColor}; text-transform: uppercase; letter-spacing: 0.05em;">🤖 AI Executive Consensus</span>
-          <span class="badge-stance ${consensusInfo.class}">${consensusInfo.modalTitle}</span>
+      <!-- Official Positional Ranks Box -->
+      ${player.author_pos_ranks.size > 0 ? `
+        <div style="background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+          <span style="font-weight: 700; font-size: 0.8rem; color: #94a3b8; text-transform: uppercase;">📊 Official Positional Ranks</span>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            ${Array.from(player.author_pos_ranks.entries()).map(([auth, info]) => `
+              <span class="badge-stance Bullish" style="font-size: 0.82rem; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-color: rgba(56, 189, 248, 0.3);">✍️ ${escapeHtml(auth)}: ${escapeHtml(info.pos_rank)}</span>
+            `).join('')}
+          </div>
         </div>
-        <p style="font-size: 0.88rem; color: #f1f5f9; line-height: 1.45; font-weight: 500;">
-          ${escapeHtml(aiSummaryText)}
-        </p>
-      </div>
+      ` : ''}
+
+      <!-- AI Executive Consensus Overview Box -->
+      ${hasArticleTakes ? `
+        <div style="${consensusInfo.boxStyle} border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-weight: 800; font-size: 0.85rem; color: ${consensusInfo.titleColor}; text-transform: uppercase; letter-spacing: 0.05em;">🤖 AI Executive Consensus</span>
+            <span class="badge-stance ${consensusInfo.class}">${consensusInfo.modalTitle}</span>
+          </div>
+          <p style="font-size: 0.88rem; color: #f1f5f9; line-height: 1.45; font-weight: 500;">
+            ${escapeHtml(aiSummaryText)}
+          </p>
+        </div>
+      ` : `
+        <div style="background: rgba(15, 23, 42, 0.4); border: 1px dashed rgba(255,255,255,0.1); border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 16px; color: #94a3b8; font-size: 0.85rem;">
+          ℹ️ No specific written article commentary available for this player. Positioned based on official rankings and Sleeper ADP.
+        </div>
+      `}
 
       <!-- Consolidated Author Cards -->
-      <div class="modal-takes-list">
-        ${Array.from(player.author_takes_map.values()).map(auth => {
-          const authStance = getPrimaryStance(Array.from(auth.stances));
-          const targetStr = consolidateTargetRoundAdvice(Array.from(auth.tiers));
+      ${hasArticleTakes ? `
+        <div class="modal-takes-list">
+          ${Array.from(player.author_takes_map.values()).map(auth => {
+            const authStance = getPrimaryStance(Array.from(auth.stances));
+            const targetStr = consolidateTargetRoundAdvice(Array.from(auth.tiers));
 
-          return `
-            <div class="modal-take-card">
-              <div class="take-author-row">
-                <span class="author-name">✍️ ${escapeHtml(auth.author)}</span>
-                <span class="badge-stance ${authStance}">${getIconForStance(authStance)} ${authStance}</span>
+            return `
+              <div class="modal-take-card">
+                <div class="take-author-row">
+                  <span class="author-name">✍️ ${escapeHtml(auth.author)}</span>
+                  <span class="badge-stance ${authStance}">${getIconForStance(authStance)} ${authStance}</span>
+                </div>
+
+                ${targetStr ? `
+                  <div class="take-section">
+                    <div class="take-label">🎯 Target Round</div>
+                    <div class="take-text" style="font-weight: 600; color: #38bdf8;">${escapeHtml(targetStr)}</div>
+                  </div>
+                ` : ''}
+
+                ${auth.reasons.length > 0 ? `
+                  <div class="take-section">
+                    <div class="take-label">📊 Key Analytical Reasons</div>
+                    <ul style="padding-left: 18px; margin-top: 4px; display: flex; flex-direction: column; gap: 4px;">
+                      ${auth.reasons.map(r => `<li class="take-text">${escapeHtml(r)}</li>`).join('')}
+                    </ul>
+                  </div>
+                ` : ''}
+
+                ${auth.upside_metrics.length > 0 ? `
+                  <div class="upside-box">
+                    🚀 <strong>Upside Metrics:</strong>
+                    <ul style="padding-left: 16px; margin-top: 2px;">
+                      ${auth.upside_metrics.map(u => `<li>${escapeHtml(u)}</li>`).join('')}
+                    </ul>
+                  </div>
+                ` : ''}
+
+                ${auth.risk_factors.length > 0 ? `
+                  <div class="risk-box">
+                    ⚠️ <strong>Risk Factors:</strong>
+                    <ul style="padding-left: 16px; margin-top: 2px;">
+                      ${auth.risk_factors.map(rf => `<li>${escapeHtml(rf)}</li>`).join('')}
+                    </ul>
+                  </div>
+                ` : ''}
               </div>
-
-              ${targetStr ? `
-                <div class="take-section">
-                  <div class="take-label">🎯 Target Round</div>
-                  <div class="take-text" style="font-weight: 600; color: #38bdf8;">${escapeHtml(targetStr)}</div>
-                </div>
-              ` : ''}
-
-              <div class="take-section">
-                <div class="take-label">📊 Key Analytical Reasons</div>
-                <ul style="padding-left: 18px; margin-top: 4px; display: flex; flex-direction: column; gap: 4px;">
-                  ${auth.reasons.map(r => `<li class="take-text">${escapeHtml(r)}</li>`).join('')}
-                </ul>
-              </div>
-
-              ${auth.upside_metrics.length > 0 ? `
-                <div class="upside-box">
-                  🚀 <strong>Upside Metrics:</strong>
-                  <ul style="padding-left: 16px; margin-top: 2px;">
-                    ${auth.upside_metrics.map(u => `<li>${escapeHtml(u)}</li>`).join('')}
-                  </ul>
-                </div>
-              ` : ''}
-
-              ${auth.risk_factors.length > 0 ? `
-                <div class="risk-box">
-                  ⚠️ <strong>Risk Factors:</strong>
-                  <ul style="padding-left: 16px; margin-top: 2px;">
-                    ${auth.risk_factors.map(rf => `<li>${escapeHtml(rf)}</li>`).join('')}
-                  </ul>
-                </div>
-              ` : ''}
-            </div>
-          `;
-        }).join('')}
-      </div>
+            `;
+          }).join('')}
+        </div>
+      ` : ''}
     `;
 
     playerModal.classList.add('open');
