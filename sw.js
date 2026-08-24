@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fp-draft-companion-v31';
+const CACHE_NAME = 'fp-draft-companion-v32';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -53,8 +53,8 @@ self.addEventListener('fetch', (event) => {
         return networkResponse;
       })
       .catch(() => {
-        // Fallback to cache if offline
-        return caches.match(event.request);
+        // Fallback to cache if offline (ignoring query strings like ?t=)
+        return caches.match(event.request, { ignoreSearch: true });
       })
   );
 });

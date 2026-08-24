@@ -83,12 +83,14 @@ document.addEventListener('DOMContentLoaded', () => {
   updateSidebarVisibility();
   updateHeaderCounts();
 
-  // Load Database safely (resilient to Incognito & Adblockers)
-  fetch('fantasypoints_db.json?t=' + Date.now())
-    .then(res => {
-      if (!res.ok) throw new Error('Failed to load fantasypoints_db.json: ' + res.status);
-      return res.json();
-    })
+  // Load Database safely with double fallback (resilient to Incognito & PWA ServiceWorker cache)
+  function loadDatabase() {
+    return fetch('fantasypoints_db.json?t=' + Date.now())
+      .then(res => res.ok ? res.json() : fetch('fantasypoints_db.json').then(r => r.json()))
+      .catch(() => fetch('fantasypoints_db.json').then(r => r.json()));
+  }
+
+  loadDatabase()
     .then(dbData => {
       rawTakesData = dbData;
       processTakesData(dbData);
