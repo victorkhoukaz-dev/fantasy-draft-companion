@@ -262,6 +262,10 @@ document.addEventListener('DOMContentLoaded', () => {
             pos_rank: take.fp_pos_rank,
             pos_num: posNum
           });
+          if (authorName === 'FantasyPoints Staff' || take.is_official_ranking || !playerObj.fp_pos_num) {
+            playerObj.fp_pos_rank = take.fp_pos_rank;
+            playerObj.fp_pos_num = posNum;
+          }
         });
       }
 
@@ -419,9 +423,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (scoreA !== scoreB) return scoreA - scoreB;
         return a.sleeper_adp - b.sleeper_adp;
       } else if (sortBy === 'pos_rank' || sortBy === 'rank') {
-        const rankA = a.pos_num;
-        const rankB = b.pos_num;
-        if (rankA !== rankB) return rankA - rankB;
+        const fpRankA = a.fp_pos_num || a.author_pos_ranks?.get('FantasyPoints Staff')?.pos_num || a.pos_num;
+        const fpRankB = b.fp_pos_num || b.author_pos_ranks?.get('FantasyPoints Staff')?.pos_num || b.pos_num;
+        if (fpRankA !== fpRankB) return fpRankA - fpRankB;
         return a.sleeper_adp - b.sleeper_adp;
       } else if (sortBy === 'stance') {
         const stanceA = getPrimaryStanceForPlayer(a);
@@ -660,8 +664,8 @@ document.addEventListener('DOMContentLoaded', () => {
       stancePills.push(`<span class="badge-stance ${consensusInfo.class}">${consensusInfo.label}</span>`);
     }
 
-    // Clean Positional Badge (Defaults to Sleeper ADP Positional Rank, or Author Stance / Rank if active)
-    let displayedPosBadge = player.pos_rank;
+    // Clean Positional Badge (Defaults to Official FantasyPoints Staff Positional Rank, or Sleeper ADP fallback)
+    let displayedPosBadge = player.fp_pos_rank || player.author_pos_ranks?.get('FantasyPoints Staff')?.pos_rank || player.pos_rank;
     if (sortBy.startsWith('author_pos_')) {
       const targetAuthor = sortBy.replace('author_pos_', '');
       const authPosObj = player.author_pos_ranks?.get(targetAuthor);
