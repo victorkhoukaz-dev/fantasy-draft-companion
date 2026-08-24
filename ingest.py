@@ -191,9 +191,58 @@ def load_manifest():
             pass
     return {}
 
-def save_manifest(manifest):
-    with open(MANIFEST_PATH, "w", encoding="utf-8") as f:
-        json.dump(manifest, f, indent=2, ensure_ascii=False)
+import re
+
+def extract_cheat_sheet_pdf(pdf_path):
+    filename = os.path.basename(pdf_path)
+    reader = PdfReader(pdf_path)
+    full_text = '\n'.join([p.extract_text() for p in reader.pages])
+
+    sections = [
+        ('QB', 'QUARTERBACKS', 'RUNNING BACKS'),
+        ('RB', 'RUNNING BACKS', 'WIDE RECEIVERS'),
+        ('WR', 'WIDE RECEIVERS', 'TIGHT ENDS'),
+        ('TE', 'TIGHT ENDS', 'KICKERS')
+    ]
+
+    pattern = re.compile(r'(\d{1,3})\s+([A-Z][a-zA-Z0-9\.\'\s\-]+?)\s+([A-Z]{2,3}|FA|-)\s+(\d+|-)\s+([A-Z0-9\-]+)\s+([\d\.]+)\s+([\d\.]+)')
+
+    extracted_takes = []
+
+    for pos_code, start_kw, end_kw in sections:
+        s_idx = full_text.find(start_kw)
+        e_idx = full_text.find(end_kw)
+        sec_text = full_text[s_idx:e_idx] if e_idx != -1 else full_text[s_idx:]
+        
+        matches = pattern.findall(sec_text)
+
+        for m in matches:
+            rank_num = int(m[0])
+            player_name = m[1].strip()
+            team = m[2].strip()
+            fpts_val = float(m[6])
+
+            pos_rank_str = f"{pos_code}{rank_num}"
+
+            take = {
+                "player_name": player_name,
+                "position": pos_code,
+                "team": team if team not in ("-", "") else "NFL",
+                "author": "FantasyPoints Staff",
+                "stance": "Bullish",
+                "fp_pos_rank": pos_rank_str,
+                "tier_or_target_round": f"Consensus {pos_rank_str}",
+                "target_round_advice": f"Consensus {pos_rank_str}",
+                "key_reason": f"Official FantasyPoints Staff Consensus Projection ({fpts_val} FPG/PPR)",
+                "upside_metric": f"Projected {fpts_val} PPR points",
+                "risk_factor": "None explicit",
+                "is_official_ranking": True,
+                "source_file": filename
+            }
+            extracted_takes.append(take)
+
+    logging.info(f"Extracted {len(extracted_takes)} exact positional ranks from cheat sheet {filename}")
+    return extracted_takes
 
 def ingest_pdfs(force=False):
     api_key = get_api_key()
@@ -286,6 +335,12 @@ def ingest_pdfs(force=False):
     for pdf_path, filename, mtime, size in pending_files:
         logging.info(f"Processing PDF: {filename}...")
         file_takes = []
+
+        if "cheat-sheet" in filename.lower() or "projections" in filename.lower():
+            file_takes = extract_cheat_sheet_pdf(pdf_path)
+            all_takes.extend(file_takes)
+            manifest[filename] = {"mtime": mtime, "size": size, "takes_count": len(file_takes), "ingested_at": time.time()}
+            continue
 
         try:
             reader = PdfReader(pdf_path)
