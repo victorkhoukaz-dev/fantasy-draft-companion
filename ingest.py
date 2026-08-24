@@ -244,7 +244,7 @@ def extract_cheat_sheet_pdf(pdf_path):
     logging.info(f"Extracted {len(extracted_takes)} exact positional ranks from cheat sheet {filename}")
     return extracted_takes
 
-def ingest_pdfs(force=False):
+def ingest_pdfs(force=False, target_file=None):
     api_key = get_api_key()
     if not api_key:
         logging.error("GEMINI_API_KEY is missing or set to placeholder in .env file.")
@@ -258,7 +258,7 @@ def ingest_pdfs(force=False):
         logging.error("google-genai package is not installed. Please run: pip install -r requirements.txt")
         return False
 
-    client = get_gemini_client()
+    client = genai.Client(api_key=api_key)
     raw_dir = os.path.join(os.path.dirname(__file__), "raw_articles")
     pdf_files = glob.glob(os.path.join(raw_dir, "*.pdf"))
 
@@ -330,7 +330,7 @@ def ingest_pdfs(force=False):
     - is_official_ranking: Set to true ONLY if this page is an official numerical rankings list/table/cheat sheet, NOT an article take.
     """
 
-    models_to_try = ["gemini-flash-latest", "gemini-3.6-flash", "gemini-2.0-flash", "gemini-3.5-flash"]
+    models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
 
     for pdf_path, filename, mtime, size in pending_files:
         logging.info(f"Processing PDF: {filename}...")
