@@ -194,6 +194,30 @@ document.addEventListener('DOMContentLoaded', () => {
     return NAME_ALIASES[rawKey] || rawKey;
   }
 
+  // Helper: Parse, split, and normalize author names into single individual analysts
+  function getCleanAuthorsList(authorRaw) {
+    if (!authorRaw || typeof authorRaw !== 'string') return ['FantasyPoints Staff'];
+    let cleaned = String(authorRaw)
+      .replace(/FPTS Staff/gi, 'FantasyPoints Staff')
+      .replace(/\s+and\s+/gi, ', ')
+      .replace(/\s+&\s+/gi, ', ');
+    
+    const parts = cleaned.split(',').map(s => s.trim()).filter(Boolean);
+    const result = new Set();
+
+    parts.forEach(p => {
+      const lower = p.toLowerCase();
+      if (lower.includes('barrett')) result.add('Scott Barrett');
+      else if (lower.includes('hansen')) result.add('John Hansen');
+      else if (lower.includes('heath')) result.add('Ryan Heath');
+      else if (lower.includes('barfield')) result.add('Graham Barfield');
+      else if (lower.includes('fpts') || lower.includes('fantasypoints')) result.add('FantasyPoints Staff');
+      else if (p.length > 2) result.add(p);
+    });
+
+    return result.size > 0 ? Array.from(result) : ['FantasyPoints Staff'];
+  }
+
   // Process & Group Takes Data
   function processTakesData(takes) {
     groupedPlayersMap.clear();
@@ -230,12 +254,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Store author positional rank if present (used for sorting & row badges)
       if (take.fp_pos_rank) {
-        const numMatch = take.fp_pos_rank.match(/\d+/);
+        const numMatch = String(take.fp_pos_rank).match(/\d+/);
         const posNum = numMatch ? parseInt(numMatch[0], 10) : 99;
-        const authorName = take.author || 'FantasyPoints Staff';
-        playerObj.author_pos_ranks.set(authorName, {
-          pos_rank: take.fp_pos_rank,
-          pos_num: posNum
+        const authorList = getCleanAuthorsList(take.author);
+        authorList.forEach(authorName => {
+          playerObj.author_pos_ranks.set(authorName, {
+            pos_rank: take.fp_pos_rank,
+            pos_num: posNum
+          });
         });
       }
 
@@ -248,34 +274,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Only add to author_takes_map if it's a real article take OR a flagship stance!
       if (!isGenericCsvRank || isFlagshipStance) {
-        const author = take.author || 'FantasyPoints Staff';
-        allAuthors.add(author);
+        const authorList = getCleanAuthorsList(take.author);
 
-        if (!playerObj.author_takes_map.has(author)) {
-          playerObj.author_takes_map.set(author, {
-            author: author,
-            stances: new Set(),
-            tiers: new Set(),
-            reasons: [],
-            upside_metrics: [],
-            risk_factors: []
-          });
-        }
+        authorList.forEach(author => {
+          allAuthors.add(author);
 
-        const authorConsolidated = playerObj.author_takes_map.get(author);
-        if (take.stance) authorConsolidated.stances.add(take.stance);
-        if (take.target_round_advice || take.tier_or_target_round) {
-          authorConsolidated.tiers.add(take.target_round_advice || take.tier_or_target_round);
-        }
-        if (take.key_reason && !take.key_reason.startsWith('Official ') && !authorConsolidated.reasons.includes(take.key_reason)) {
-          authorConsolidated.reasons.push(take.key_reason);
-        }
-        if (take.upside_metric && !take.upside_metric.startsWith('Official ') && !authorConsolidated.upside_metrics.includes(take.upside_metric)) {
-          authorConsolidated.upside_metrics.push(take.upside_metric);
-        }
-        if (take.risk_factor && !authorConsolidated.risk_factors.includes(take.risk_factor)) {
-          authorConsolidated.risk_factors.push(take.risk_factor);
-        }
+          if (!playerObj.author_takes_map.has(author)) {
+            playerObj.author_takes_map.set(author, {
+              author: author,
+              stances: new Set(),
+              tiers: new Set(),
+              reasons: [],
+              upside_metrics: [],
+              risk_factors: []
+            });
+          }
+
+          const authorConsolidated = playerObj.author_takes_map.get(author);
+          if (take.stance) authorConsolidated.stances.add(take.stance);
+          if (take.target_round_advice || take.tier_or_target_round) {
+            authorConsolidated.tiers.add(take.target_round_advice || take.tier_or_target_round);
+          }
+          if (take.key_reason && !take.key_reason.startsWith('Official ') && !authorConsolidated.reasons.includes(take.key_reason)) {
+            authorConsolidated.reasons.push(take.key_reason);
+          }
+          if (take.upside_metric && !take.upside_metric.startsWith('Official ') && !authorConsolidated.upside_metrics.includes(take.upside_metric)) {
+            authorConsolidated.upside_metrics.push(take.upside_metric);
+          }
+          if (take.risk_factor && !authorConsolidated.risk_factors.includes(take.risk_factor)) {
+            authorConsolidated.risk_factors.push(take.risk_factor);
+          }
+        });
       }
     });
 
@@ -861,14 +890,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const negativeAuthors = [];
 
     player.author_takes_map.forEach((authData, authName) => {
-      let isPos = false;
-      let isNeg = false;
-      authData.stances.forEach(s => {
-        if (positiveSet.has(s)) isPos = true;
-        if (negativeSet.has(s)) isNeg = true;
-      });
-      if (isPos) positiveAuthors.push(authName);
-      if (isNeg) negativeAuthors.push(authName);
+      const primaryStance = getPrimaryStance(Array.from(authData.stances));
+      if (positiveSet.has(primaryStance)) {
+        if (!positiveAuthors.includes(authName)) positiveAuthors.push(authName);
+      } else if (negativeSet.has(primaryStance)) {
+        if (!negativeAuthors.includes(authName)) negativeAuthors.push(authName);
+      }
     });
 
     const reasons = [];
