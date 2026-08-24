@@ -83,48 +83,35 @@ document.addEventListener('DOMContentLoaded', () => {
   updateSidebarVisibility();
   updateHeaderCounts();
 
-  // Load Database safely (resilient to Incognito & PWA ServiceWorker cache)
-  function loadDatabase() {
-    const primaryUrl = new URL('fantasypoints_db.json', window.location.href).href;
-    return fetch(primaryUrl + '?t=' + Date.now(), { cache: 'no-store' })
-      .then(res => {
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.json();
-      })
-      .catch(() => fetch(primaryUrl).then(r => r.json()))
-      .catch(() => fetch('./fantasypoints_db.json').then(r => r.json()));
-  }
-
-  loadDatabase()
-    .then(dbData => {
-      if (!Array.isArray(dbData) || dbData.length === 0) {
-        throw new Error('Database file empty or invalid array format.');
-      }
-      rawTakesData = dbData;
-      processTakesData(dbData);
-      renderPlayerBoard();
-
-      // Fetch Live Sleeper ADP asynchronously in background
-      fetchSleeperAdp().then(() => {
-        processTakesData(rawTakesData);
+  // Load Sleeper Live ADP & FantasyPoints Database in Parallel
+  Promise.all([
+    fetchSleeperAdp(),
+    fetch('fantasypoints_db.json?t=' + Date.now()).then(r => r.json())
+  ])
+  .then(([sleeperData, dbData]) => {
+    rawTakesData = dbData;
+    processTakesData(dbData);
+    renderPlayerBoard();
+  })
+  .catch(err => {
+    console.error('Initialization error:', err);
+    fetch('fantasypoints_db.json?t=' + Date.now())
+      .then(res => res.json())
+      .then(data => {
+        rawTakesData = data;
+        processTakesData(data);
         renderPlayerBoard();
-      }).catch(err => {
-        console.warn('Sleeper ADP background load skipped:', err);
+      })
+      .catch(e => {
+        playerGrid.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">⚠️</div>
+            <h3>Could not load player dataset</h3>
+            <p>Please ensure fantasypoints_db.json exists in the project root.</p>
+          </div>
+        `;
       });
-    })
-    .catch(err => {
-      console.error('Initialization error:', err);
-      playerGrid.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-icon">⚠️</div>
-          <h3>Could not load player dataset</h3>
-          <p style="color: #94a3b8; font-size: 0.85rem; margin-top: 6px;">${escapeHtml(err.message || String(err))}</p>
-          <button onclick="if('caches' in window){caches.keys().then(keys=>keys.forEach(k=>caches.delete(k)));} if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(regs=>regs.forEach(r=>r.unregister()));} window.location.reload(true);" style="margin-top: 14px; padding: 10px 18px; background: linear-gradient(135deg, #38bdf8, #6366f1); color: #ffffff; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);">
-            🔄 Reset Cache & Reload App
-          </button>
-        </div>
-      `;
-    });
+  });
 
   // Fetch Live Sleeper Real ADP & Positional Ranks
   function fetchSleeperAdp() {
@@ -133,14 +120,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const projectionsUrl = `https://api.sleeper.app/projections/nfl/${year}?season_type=regular&position[]=QB&position[]=RB&position[]=WR&position[]=TE`;
 
     return Promise.all([
-      fetch(playersUrl).then(res => res.ok ? res.json() : null).catch(() => null),
-      fetch(projectionsUrl).then(res => res.ok ? res.json() : []).catch(() => [])
+      fetch(playersUrl).then(res => res.json()),
+      fetch(projectionsUrl).then(res => res.json()).catch(() => [])
     ])
     .then(([players, projections]) => {
-      if (!players) {
-        if (sleeperStatusBadge) sleeperStatusBadge.textContent = '🟡 Sleeper ADP: Offline';
-        return sleeperAdpMap;
-      }
       sleeperAdpMap.clear();
 
       const adpByPlayerId = new Map();
@@ -202,25 +185,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Helper: Split and normalize author names
-  function getIndividualAuthors(authorStr) {
-    if (!authorStr) return ['FantasyPoints Staff'];
-    let cleaned = authorStr
-      .replace(/FPTS Staff/gi, 'FantasyPoints Staff')
-      .replace(/\s+and\s+/gi, ', ')
-      .replace(/\s+&\s+/gi, ', ');
-    
-    const parts = cleaned.split(',').map(s => s.trim()).filter(Boolean);
-    const authors = [];
-    parts.forEach(p => {
-      if (p.toLowerCase().includes('barrett')) authors.push('Scott Barrett');
-      else if (p.toLowerCase().includes('hansen')) authors.push('John Hansen');
-      else if (p.toLowerCase().includes('heath')) authors.push('Ryan Heath');
-      else if (p.toLowerCase().includes('barfield')) authors.push('Graham Barfield');
-      else if (p.toLowerCase().includes('fpts') || p.toLowerCase().includes('fantasypoints')) authors.push('FantasyPoints Staff');
-      else if (p) authors.push(p);
-    });
-    return authors.length > 0 ? Array.from(new Set(authors)) : ['FantasyPoints Staff'];
+  // Helper: Normalize name
+  function getCanonicalNameKey(name) {
+    if (!name) return '';
+    let rawKey = name.toLowerCase()
+      .replace(/ jr\.?| sr\.?| iii| ii| iv/gi, '')
+      .replace(/[^a-z]/g, '');
+    return NAME_ALIASES[rawKey] || rawKey;
   }
 
   // Process & Group Takes Data
@@ -277,37 +248,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Only add to author_takes_map if it's a real article take OR a flagship stance!
       if (!isGenericCsvRank || isFlagshipStance) {
-        const individualAuthors = getIndividualAuthors(take.author);
+        const author = take.author || 'FantasyPoints Staff';
+        allAuthors.add(author);
 
-        individualAuthors.forEach(author => {
-          allAuthors.add(author);
+        if (!playerObj.author_takes_map.has(author)) {
+          playerObj.author_takes_map.set(author, {
+            author: author,
+            stances: new Set(),
+            tiers: new Set(),
+            reasons: [],
+            upside_metrics: [],
+            risk_factors: []
+          });
+        }
 
-          if (!playerObj.author_takes_map.has(author)) {
-            playerObj.author_takes_map.set(author, {
-              author: author,
-              stances: new Set(),
-              tiers: new Set(),
-              reasons: [],
-              upside_metrics: [],
-              risk_factors: []
-            });
-          }
-
-          const authorConsolidated = playerObj.author_takes_map.get(author);
-          if (take.stance) authorConsolidated.stances.add(take.stance);
-          if (take.target_round_advice || take.tier_or_target_round) {
-            authorConsolidated.tiers.add(take.target_round_advice || take.tier_or_target_round);
-          }
-          if (take.key_reason && !take.key_reason.startsWith('Official ') && !authorConsolidated.reasons.includes(take.key_reason)) {
-            authorConsolidated.reasons.push(take.key_reason);
-          }
-          if (take.upside_metric && !take.upside_metric.startsWith('Official ') && !authorConsolidated.upside_metrics.includes(take.upside_metric)) {
-            authorConsolidated.upside_metrics.push(take.upside_metric);
-          }
-          if (take.risk_factor && !authorConsolidated.risk_factors.includes(take.risk_factor)) {
-            authorConsolidated.risk_factors.push(take.risk_factor);
-          }
-        });
+        const authorConsolidated = playerObj.author_takes_map.get(author);
+        if (take.stance) authorConsolidated.stances.add(take.stance);
+        if (take.target_round_advice || take.tier_or_target_round) {
+          authorConsolidated.tiers.add(take.target_round_advice || take.tier_or_target_round);
+        }
+        if (take.key_reason && !take.key_reason.startsWith('Official ') && !authorConsolidated.reasons.includes(take.key_reason)) {
+          authorConsolidated.reasons.push(take.key_reason);
+        }
+        if (take.upside_metric && !take.upside_metric.startsWith('Official ') && !authorConsolidated.upside_metrics.includes(take.upside_metric)) {
+          authorConsolidated.upside_metrics.push(take.upside_metric);
+        }
+        if (take.risk_factor && !authorConsolidated.risk_factors.includes(take.risk_factor)) {
+          authorConsolidated.risk_factors.push(take.risk_factor);
+        }
       }
     });
 
@@ -375,12 +343,9 @@ document.addEventListener('DOMContentLoaded', () => {
       playersArray = playersArray.filter(p => p.position === currentPosFilter);
     }
 
-    // Author Filter (Matches written article takes OR official CSV positional rankings)
+    // Author Filter
     if (currentAuthorFilter !== 'ALL') {
-      playersArray = playersArray.filter(p => 
-        p.author_takes_map.has(currentAuthorFilter) || 
-        p.author_pos_ranks.has(currentAuthorFilter)
-      );
+      playersArray = playersArray.filter(p => p.author_takes_map.has(currentAuthorFilter));
     }
 
     // Search Query Filter
