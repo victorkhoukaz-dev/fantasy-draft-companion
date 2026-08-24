@@ -459,6 +459,64 @@ document.addEventListener('DOMContentLoaded', () => {
     updateCompareFloatingBar();
   }
 
+  // Helper: Deduplicate near-identical sentences & filter out AI junk phrases
+  function dedupeAndCondenseList(rawList, maxItems = 3) {
+    if (!rawList || !Array.isArray(rawList) || rawList.length === 0) return [];
+
+    const junkPhrases = [
+      'none explicit', 'none mentioned', 'no major risk', 'no specific risk', 
+      'n/a', 'official scott barrett', 'official john hansen', 'none listed',
+      'none noted', 'not specified', 'no risk mentioned', 'none'
+    ];
+
+    const cleaned = [];
+
+    rawList.forEach(rawItem => {
+      if (!rawItem || typeof rawItem !== 'string') return;
+      let text = rawItem.trim();
+      const lower = text.toLowerCase();
+
+      // Skip generic AI filler
+      if (junkPhrases.some(junk => lower === junk || lower.startsWith(junk))) return;
+      if (text.length < 5) return;
+
+      // Extract key significant words for overlap check (ignoring common stop words)
+      const words = lower.replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 3);
+      
+      let isDuplicate = false;
+      for (const existing of cleaned) {
+        const existingLower = existing.toLowerCase();
+        // Check direct substring inclusion
+        if (existingLower.includes(lower) || lower.includes(existingLower)) {
+          isDuplicate = true;
+          break;
+        }
+
+        // Check word overlap ratio (Jaccard similarity threshold ~0.55)
+        const existingWords = existingLower.replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 3);
+        if (words.length > 2 && existingWords.length > 2) {
+          const matchCount = words.filter(w => existingWords.includes(w)).length;
+          const similarity = matchCount / Math.min(words.length, existingWords.length);
+          if (similarity >= 0.55) {
+            isDuplicate = true;
+            // Prefer the longer/more informative sentence if concise
+            if (text.length > existing.length && text.length < 180) {
+              const idx = cleaned.indexOf(existing);
+              cleaned[idx] = text;
+            }
+            break;
+          }
+        }
+      }
+
+      if (!isDuplicate) {
+        cleaned.push(text);
+      }
+    });
+
+    return cleaned.slice(0, maxItems);
+  }
+
   // Helper: Consolidate & Clean Target Round Advice
   function consolidateTargetRoundAdvice(rawList) {
     if (!rawList || rawList.length === 0) return '';
@@ -474,16 +532,17 @@ document.addEventListener('DOMContentLoaded', () => {
         .replace(/\(rb\d+\)/gi, '')
         .replace(/\(wr\d+\)/gi, '')
         .replace(/\(te\d+\)/gi, '')
+        .replace(/exodia\s*/gi, '')
         .replace(/\s*\/\s*/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
       
-      if (str && !cleaned.some(c => c.toLowerCase() === str.toLowerCase() || str.toLowerCase().includes(c.toLowerCase()))) {
+      if (str && str.length > 2 && !cleaned.some(c => c.toLowerCase() === str.toLowerCase() || str.toLowerCase().includes(c.toLowerCase()) || c.toLowerCase().includes(str.toLowerCase()))) {
         cleaned.push(str);
       }
     });
 
-    return cleaned.join(' / ');
+    return cleaned.slice(0, 2).join(' / ');
   }
 
   // Helper: Format 12-Team Draft Round & Pick
@@ -1004,32 +1063,44 @@ document.addEventListener('DOMContentLoaded', () => {
                   </div>
                 ` : ''}
 
-                ${auth.reasons.length > 0 ? `
-                  <div class="take-section">
-                    <div class="take-label">📊 Key Analytical Reasons</div>
-                    <ul style="padding-left: 18px; margin-top: 4px; display: flex; flex-direction: column; gap: 4px;">
-                      ${auth.reasons.map(r => `<li class="take-text">${escapeHtml(r)}</li>`).join('')}
-                    </ul>
-                  </div>
-                ` : ''}
+                ${(() => {
+                  const cleanReasons = dedupeAndCondenseList(auth.reasons, 3);
+                  if (cleanReasons.length === 0) return '';
+                  return `
+                    <div class="take-section">
+                      <div class="take-label">📊 Key Analytical Reasons</div>
+                      <ul style="padding-left: 18px; margin-top: 4px; display: flex; flex-direction: column; gap: 4px;">
+                        ${cleanReasons.map(r => `<li class="take-text">${escapeHtml(r)}</li>`).join('')}
+                      </ul>
+                    </div>
+                  `;
+                })()}
 
-                ${auth.upside_metrics.length > 0 ? `
-                  <div class="upside-box">
-                    🚀 <strong>Upside Metrics:</strong>
-                    <ul style="padding-left: 16px; margin-top: 2px;">
-                      ${auth.upside_metrics.map(u => `<li>${escapeHtml(u)}</li>`).join('')}
-                    </ul>
-                  </div>
-                ` : ''}
+                ${(() => {
+                  const cleanUpsides = dedupeAndCondenseList(auth.upside_metrics, 3);
+                  if (cleanUpsides.length === 0) return '';
+                  return `
+                    <div class="upside-box">
+                      🚀 <strong>Upside Metrics:</strong>
+                      <ul style="padding-left: 16px; margin-top: 2px;">
+                        ${cleanUpsides.map(u => `<li>${escapeHtml(u)}</li>`).join('')}
+                      </ul>
+                    </div>
+                  `;
+                })()}
 
-                ${auth.risk_factors.length > 0 ? `
-                  <div class="risk-box">
-                    ⚠️ <strong>Risk Factors:</strong>
-                    <ul style="padding-left: 16px; margin-top: 2px;">
-                      ${auth.risk_factors.map(rf => `<li>${escapeHtml(rf)}</li>`).join('')}
-                    </ul>
-                  </div>
-                ` : ''}
+                ${(() => {
+                  const cleanRisks = dedupeAndCondenseList(auth.risk_factors, 3);
+                  if (cleanRisks.length === 0) return '';
+                  return `
+                    <div class="risk-box">
+                      ⚠️ <strong>Risk Factors:</strong>
+                      <ul style="padding-left: 16px; margin-top: 2px;">
+                        ${cleanRisks.map(rf => `<li>${escapeHtml(rf)}</li>`).join('')}
+                      </ul>
+                    </div>
+                  `;
+                })()}
               </div>
             `;
           }).join('')}
