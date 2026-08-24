@@ -1,44 +1,50 @@
 {
   "Scott Barrett draft guide.pdf": {
-    "mtime": 1786155426.4622803,
-    "size": 7850399,
-    "take_count": 61,
-    "ingested_at": "2026-08-09 14:18:13"
+    "mtime": 1787538017.5468903,
+    "size": 6306910,
+    "take_count": 64,
+    "ingested_at": "2026-08-23 22:54:36"
   },
   "Ryan heath draft guide.pdf": {
-    "mtime": 1786157793.2011652,
-    "size": 4871001,
-    "take_count": 44,
-    "ingested_at": "2026-08-09 11:48:10"
+    "mtime": 1787538038.0235646,
+    "size": 6913823,
+    "take_count": 49,
+    "ingested_at": "2026-08-23 22:52:32"
   },
   "John Hansen best picks.pdf": {
-    "mtime": 1786241966.6822913,
-    "size": 6300141,
-    "take_count": 51,
-    "ingested_at": "2026-08-09 11:41:07"
+    "mtime": 1787538165.7142613,
+    "size": 6540502,
+    "take_count": 58,
+    "ingested_at": "2026-08-23 22:48:11"
   },
   "John Hansen draft plan.pdf": {
-    "mtime": 1786241983.1036367,
-    "size": 6087377,
-    "take_count": 122,
-    "ingested_at": "2026-08-09 11:46:22"
+    "mtime": 1787538142.7761512,
+    "size": 1561504,
+    "take_count": 35,
+    "ingested_at": "2026-08-23 22:49:24"
   },
   "FP staff (overvalues).pdf": {
     "mtime": 1786241988.0632393,
     "size": 3411433,
     "take_count": 15,
-    "ingested_at": "2026-08-09 11:34:46"
+    "ingested_at": "2026-08-23 22:42:14"
   },
   "FT staff (targets).pdf": {
     "mtime": 1786244284.3066332,
     "size": 8018795,
     "take_count": 39,
-    "ingested_at": "2026-08-09 11:38:36"
+    "ingested_at": "2026-08-23 22:45:39"
   },
   "2026-season-projections-cheat-sheet-ppr.pdf": {
-    "mtime": 1786286988.2228172,
-    "size": 263555,
-    "take_count": 9,
-    "ingested_at": "2026-08-09 11:33:44"
+    "mtime": 1787538535.4643974,
+    "size": 264797,
+    "take_count": 6,
+    "ingested_at": "2026-08-23 22:37:02"
+  },
+  "Barfield.pdf": {
+    "mtime": 1787538692.505852,
+    "size": 4191718,
+    "take_count": 114,
+    "ingested_at": "2026-08-23 22:40:48"
   }
 }

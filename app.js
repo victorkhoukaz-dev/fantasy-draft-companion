@@ -612,7 +612,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="row-sub-line">
             <span class="adp-tag">Sleeper: ${adpDisplay}</span>
             ${authors.length > 0 ? `<span class="author-approval-tag">✍️ ${authors.join(', ')}</span>` : ''}
-            ${topTargetStr ? `<span class="tier-tag">🎯 ${escapeHtml(topTargetStr)}</span>` : ''}
+            ${(topTargetStr && consensusInfo.type !== 'FADE') ? `<span class="tier-tag">🎯 ${escapeHtml(topTargetStr)}</span>` : ''}
           </div>
         </div>
       </div>
@@ -883,7 +883,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const mainReason = reasons.length > 0 ? reasons[0] : 'key analytical drivers';
-    const mainTarget = targetList.length > 0 ? ` | Target: ${targetList[0]}` : '';
+    const mainTarget = (targetList.length > 0 && consensusInfo.type !== 'FADE') ? ` | Target: ${targetList[0]}` : '';
 
     if (consensusInfo.type === 'SPLIT') {
       const posStr = positiveAuthors.length > 0 ? positiveAuthors.join(' & ') : 'Some Analysts';
@@ -891,7 +891,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return `Analyst Split: ${posStr} recommend Target/Must-Draft, but ${negStr} recommend Avoid — ${mainReason}${mainTarget}`;
     } else if (consensusInfo.type === 'FADE') {
       const negStr = negativeAuthors.length > 0 ? negativeAuthors.join(' & ') : Array.from(player.author_takes_map.keys()).join(' & ');
-      return `Unanimous Avoid by ${negStr} — ${mainReason}${mainTarget}`;
+      return `Unanimous Avoid by ${negStr} — ${mainReason}`;
     } else if (consensusInfo.type === 'BULLISH') {
       const posStr = positiveAuthors.length > 0 ? positiveAuthors.join(' & ') : Array.from(player.author_takes_map.keys()).join(' & ');
       return `Consensus Target by ${posStr} — ${mainReason}${mainTarget}`;
@@ -961,6 +961,7 @@ document.addEventListener('DOMContentLoaded', () => {
           ${Array.from(player.author_takes_map.values()).map(auth => {
             const authStance = getPrimaryStance(Array.from(auth.stances));
             const targetStr = consolidateTargetRoundAdvice(Array.from(auth.tiers));
+            const isNegativeStance = ['Avoid', 'Bearish', 'Dirty Thirty', 'Dirty-Thirty'].includes(authStance);
 
             return `
               <div class="modal-take-card">
@@ -971,8 +972,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 ${targetStr ? `
                   <div class="take-section">
-                    <div class="take-label">🎯 Target Round</div>
-                    <div class="take-text" style="font-weight: 600; color: #38bdf8;">${escapeHtml(targetStr)}</div>
+                    <div class="take-label">${isNegativeStance ? '📍 Draft Range' : '🎯 Target Round'}</div>
+                    <div class="take-text" style="font-weight: 600; color: ${isNegativeStance ? '#f43f5e' : '#38bdf8'};">${escapeHtml(targetStr)}</div>
                   </div>
                 ` : ''}
 
