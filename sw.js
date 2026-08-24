@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fp-draft-companion-v32';
+const CACHE_NAME = 'fp-draft-companion-v33';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -53,8 +53,14 @@ self.addEventListener('fetch', (event) => {
         return networkResponse;
       })
       .catch(() => {
-        // Fallback to cache if offline (ignoring query strings like ?t=)
-        return caches.match(event.request, { ignoreSearch: true });
+        // Fallback to cache if offline (never return undefined to prevent SW crash)
+        return caches.match(event.request, { ignoreSearch: true }).then(cachedResponse => {
+          if (cachedResponse) return cachedResponse;
+          return new Response(JSON.stringify({ error: 'Offline / Blocked' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        });
       })
   );
 });

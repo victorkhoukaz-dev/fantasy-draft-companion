@@ -83,15 +83,23 @@ document.addEventListener('DOMContentLoaded', () => {
   updateSidebarVisibility();
   updateHeaderCounts();
 
-  // Load Database safely with double fallback (resilient to Incognito & PWA ServiceWorker cache)
+  // Load Database safely (resilient to Incognito & PWA ServiceWorker cache)
   function loadDatabase() {
-    return fetch('fantasypoints_db.json?t=' + Date.now())
-      .then(res => res.ok ? res.json() : fetch('fantasypoints_db.json').then(r => r.json()))
-      .catch(() => fetch('fantasypoints_db.json').then(r => r.json()));
+    const primaryUrl = new URL('fantasypoints_db.json', window.location.href).href;
+    return fetch(primaryUrl + '?t=' + Date.now(), { cache: 'no-store' })
+      .then(res => {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .catch(() => fetch(primaryUrl).then(r => r.json()))
+      .catch(() => fetch('./fantasypoints_db.json').then(r => r.json()));
   }
 
   loadDatabase()
     .then(dbData => {
+      if (!Array.isArray(dbData) || dbData.length === 0) {
+        throw new Error('Database file empty or invalid array format.');
+      }
       rawTakesData = dbData;
       processTakesData(dbData);
       renderPlayerBoard();
@@ -110,7 +118,10 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="empty-state">
           <div class="empty-icon">⚠️</div>
           <h3>Could not load player dataset</h3>
-          <p>Please ensure fantasypoints_db.json exists in the project root.</p>
+          <p style="color: #94a3b8; font-size: 0.85rem; margin-top: 6px;">${escapeHtml(err.message || String(err))}</p>
+          <button onclick="if('caches' in window){caches.keys().then(keys=>keys.forEach(k=>caches.delete(k)));} if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(regs=>regs.forEach(r=>r.unregister()));} window.location.reload(true);" style="margin-top: 14px; padding: 10px 18px; background: linear-gradient(135deg, #38bdf8, #6366f1); color: #ffffff; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);">
+            🔄 Reset Cache & Reload App
+          </button>
         </div>
       `;
     });
