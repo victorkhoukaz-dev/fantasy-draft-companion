@@ -1163,12 +1163,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Register PWA Service Worker
+  // Unregister Service Worker to prevent caching issues
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js')
-        .then(reg => console.log('PWA ServiceWorker registered:', reg.scope))
-        .catch(err => console.log('PWA ServiceWorker registration failed:', err));
+    navigator.serviceWorker.getRegistrations().then(regs => {
+      regs.forEach(r => r.unregister());
     });
   }
 });
