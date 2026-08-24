@@ -185,13 +185,25 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Helper: Normalize name
-  function getCanonicalNameKey(name) {
-    if (!name) return '';
-    let rawKey = name.toLowerCase()
-      .replace(/ jr\.?| sr\.?| iii| ii| iv/gi, '')
-      .replace(/[^a-z]/g, '');
-    return NAME_ALIASES[rawKey] || rawKey;
+  // Helper: Split and normalize author names
+  function getIndividualAuthors(authorStr) {
+    if (!authorStr) return ['FantasyPoints Staff'];
+    let cleaned = authorStr
+      .replace(/FPTS Staff/gi, 'FantasyPoints Staff')
+      .replace(/\s+and\s+/gi, ', ')
+      .replace(/\s+&\s+/gi, ', ');
+    
+    const parts = cleaned.split(',').map(s => s.trim()).filter(Boolean);
+    const authors = [];
+    parts.forEach(p => {
+      if (p.toLowerCase().includes('barrett')) authors.push('Scott Barrett');
+      else if (p.toLowerCase().includes('hansen')) authors.push('John Hansen');
+      else if (p.toLowerCase().includes('heath')) authors.push('Ryan Heath');
+      else if (p.toLowerCase().includes('barfield')) authors.push('Graham Barfield');
+      else if (p.toLowerCase().includes('fpts') || p.toLowerCase().includes('fantasypoints')) authors.push('FantasyPoints Staff');
+      else if (p) authors.push(p);
+    });
+    return authors.length > 0 ? Array.from(new Set(authors)) : ['FantasyPoints Staff'];
   }
 
   // Process & Group Takes Data
@@ -248,34 +260,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Only add to author_takes_map if it's a real article take OR a flagship stance!
       if (!isGenericCsvRank || isFlagshipStance) {
-        const author = take.author || 'FantasyPoints Staff';
-        allAuthors.add(author);
+        const individualAuthors = getIndividualAuthors(take.author);
 
-        if (!playerObj.author_takes_map.has(author)) {
-          playerObj.author_takes_map.set(author, {
-            author: author,
-            stances: new Set(),
-            tiers: new Set(),
-            reasons: [],
-            upside_metrics: [],
-            risk_factors: []
-          });
-        }
+        individualAuthors.forEach(author => {
+          allAuthors.add(author);
 
-        const authorConsolidated = playerObj.author_takes_map.get(author);
-        if (take.stance) authorConsolidated.stances.add(take.stance);
-        if (take.target_round_advice || take.tier_or_target_round) {
-          authorConsolidated.tiers.add(take.target_round_advice || take.tier_or_target_round);
-        }
-        if (take.key_reason && !take.key_reason.startsWith('Official ') && !authorConsolidated.reasons.includes(take.key_reason)) {
-          authorConsolidated.reasons.push(take.key_reason);
-        }
-        if (take.upside_metric && !take.upside_metric.startsWith('Official ') && !authorConsolidated.upside_metrics.includes(take.upside_metric)) {
-          authorConsolidated.upside_metrics.push(take.upside_metric);
-        }
-        if (take.risk_factor && !authorConsolidated.risk_factors.includes(take.risk_factor)) {
-          authorConsolidated.risk_factors.push(take.risk_factor);
-        }
+          if (!playerObj.author_takes_map.has(author)) {
+            playerObj.author_takes_map.set(author, {
+              author: author,
+              stances: new Set(),
+              tiers: new Set(),
+              reasons: [],
+              upside_metrics: [],
+              risk_factors: []
+            });
+          }
+
+          const authorConsolidated = playerObj.author_takes_map.get(author);
+          if (take.stance) authorConsolidated.stances.add(take.stance);
+          if (take.target_round_advice || take.tier_or_target_round) {
+            authorConsolidated.tiers.add(take.target_round_advice || take.tier_or_target_round);
+          }
+          if (take.key_reason && !take.key_reason.startsWith('Official ') && !authorConsolidated.reasons.includes(take.key_reason)) {
+            authorConsolidated.reasons.push(take.key_reason);
+          }
+          if (take.upside_metric && !take.upside_metric.startsWith('Official ') && !authorConsolidated.upside_metrics.includes(take.upside_metric)) {
+            authorConsolidated.upside_metrics.push(take.upside_metric);
+          }
+          if (take.risk_factor && !authorConsolidated.risk_factors.includes(take.risk_factor)) {
+            authorConsolidated.risk_factors.push(take.risk_factor);
+          }
+        });
       }
     });
 
