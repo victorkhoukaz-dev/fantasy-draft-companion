@@ -209,24 +209,29 @@ def ingest_pdfs(force=False):
         logging.error("google-genai package is not installed. Please run: pip install -r requirements.txt")
         return False
 
-    client = genai.Client(api_key=api_key)
+    client = get_gemini_client()
     raw_dir = os.path.join(os.path.dirname(__file__), "raw_articles")
     pdf_files = glob.glob(os.path.join(raw_dir, "*.pdf"))
 
     if not pdf_files:
-        logging.warning(f"No .pdf files found in directory: {raw_dir}")
-        print(f"\n[!] No PDF files found in '{raw_dir}'. Drop FantasyPoints PDFs into this folder and re-run python ingest.py.\n")
+        logging.warning("No PDF files found in raw_articles/")
+        print("No PDF files found in raw_articles/")
         return False
 
     manifest = load_manifest()
     
-    # Filter for new or modified PDF files
+    # Filter for target or new/modified PDF files
     pending_files = []
     for pdf_path in pdf_files:
         filename = os.path.basename(pdf_path)
         mtime = os.path.getmtime(pdf_path)
         size = os.path.getsize(pdf_path)
         
+        if target_file:
+            if filename.lower() == target_file.lower() or target_file.lower() in filename.lower():
+                pending_files.append((pdf_path, filename, mtime, size))
+            continue
+
         if not force and filename in manifest:
             record = manifest[filename]
             if record.get("mtime") == mtime and record.get("size") == size:
@@ -235,22 +240,25 @@ def ingest_pdfs(force=False):
         pending_files.append((pdf_path, filename, mtime, size))
 
     if not pending_files:
-        logging.info("All PDFs in raw_articles are up to date! No new files to process.")
-        print("\n[✓] All articles are up to date in fantasypoints_db.json!\n")
+        logging.info("No matching PDF files to process.")
+        print("\n[✓] All targeted articles are up to date in fantasypoints_db.json!\n")
         return True
 
-    logging.info(f"Found {len(pending_files)} new/updated PDF file(s) to process.")
+    logging.info(f"Found {len(pending_files)} PDF file(s) to process.")
 
     all_takes = []
     db_path = os.path.join(os.path.dirname(__file__), "fantasypoints_db.json")
+
+    # If target_file or force is specified, purge old takes for pending files to prevent stale duplicates
+    pending_filenames = {fn for _, fn, _, _ in pending_files}
 
     if os.path.exists(db_path):
         try:
             with open(db_path, "r", encoding="utf-8") as f:
                 existing_data = json.load(f)
                 if isinstance(existing_data, list):
-                    all_takes = existing_data
-                    logging.info(f"Loaded {len(all_takes)} existing takes from fantasypoints_db.json")
+                    all_takes = [t for t in existing_data if t.get("source_file") not in pending_filenames]
+                    logging.info(f"Loaded {len(all_takes)} existing takes from fantasypoints_db.json (purged old takes for updated files)")
         except Exception as e:
             logging.warning(f"Could not parse existing fantasypoints_db.json: {e}")
 
@@ -322,8 +330,8 @@ def ingest_pdfs(force=False):
                 if response and response.text:
                     try:
                         extracted = json.loads(response.text)
-                        takes = extracted.get("takes", [])
-                        logging.info(f"   Extracted {len(takes)} take(s) from pages {start_idx+1}-{end_idx}")
+                        for t in takes:
+                            t["source_file"] = filename
                         file_takes.extend(takes)
                     except Exception as parse_err:
                         logging.warning(f"Failed to parse JSON for pages {start_idx+1}-{end_idx}: {parse_err}")
@@ -473,5 +481,7 @@ if __name__ == "__main__":
         validate_existing_database()
     elif len(sys.argv) > 1 and sys.argv[1] in ["--force", "-f"]:
         ingest_pdfs(force=True)
+    elif len(sys.argv) > 2 and sys.argv[1] in ["--file", "-file"]:
+        ingest_pdfs(target_file=sys.argv[2])
     else:
         ingest_pdfs()
