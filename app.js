@@ -83,35 +83,35 @@ document.addEventListener('DOMContentLoaded', () => {
   updateSidebarVisibility();
   updateHeaderCounts();
 
-  // Load Sleeper Live ADP & FantasyPoints Database in Parallel
-  Promise.all([
-    fetchSleeperAdp(),
-    fetch('fantasypoints_db.json?t=' + Date.now()).then(r => r.json())
-  ])
-  .then(([sleeperData, dbData]) => {
-    rawTakesData = dbData;
-    processTakesData(dbData);
-    renderPlayerBoard();
-  })
-  .catch(err => {
-    console.error('Initialization error:', err);
-    fetch('fantasypoints_db.json?t=' + Date.now())
-      .then(res => res.json())
-      .then(data => {
-        rawTakesData = data;
-        processTakesData(data);
+  // Load Database safely (resilient to Incognito & Adblockers)
+  fetch('fantasypoints_db.json?t=' + Date.now())
+    .then(res => {
+      if (!res.ok) throw new Error('Failed to load fantasypoints_db.json: ' + res.status);
+      return res.json();
+    })
+    .then(dbData => {
+      rawTakesData = dbData;
+      processTakesData(dbData);
+      renderPlayerBoard();
+
+      // Fetch Live Sleeper ADP asynchronously in background
+      fetchSleeperAdp().then(() => {
+        processTakesData(rawTakesData);
         renderPlayerBoard();
-      })
-      .catch(e => {
-        playerGrid.innerHTML = `
-          <div class="empty-state">
-            <div class="empty-icon">⚠️</div>
-            <h3>Could not load player dataset</h3>
-            <p>Please ensure fantasypoints_db.json exists in the project root.</p>
-          </div>
-        `;
+      }).catch(err => {
+        console.warn('Sleeper ADP background load skipped:', err);
       });
-  });
+    })
+    .catch(err => {
+      console.error('Initialization error:', err);
+      playerGrid.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">⚠️</div>
+          <h3>Could not load player dataset</h3>
+          <p>Please ensure fantasypoints_db.json exists in the project root.</p>
+        </div>
+      `;
+    });
 
   // Fetch Live Sleeper Real ADP & Positional Ranks
   function fetchSleeperAdp() {
@@ -120,10 +120,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const projectionsUrl = `https://api.sleeper.app/projections/nfl/${year}?season_type=regular&position[]=QB&position[]=RB&position[]=WR&position[]=TE`;
 
     return Promise.all([
-      fetch(playersUrl).then(res => res.json()),
-      fetch(projectionsUrl).then(res => res.json()).catch(() => [])
+      fetch(playersUrl).then(res => res.ok ? res.json() : null).catch(() => null),
+      fetch(projectionsUrl).then(res => res.ok ? res.json() : []).catch(() => [])
     ])
     .then(([players, projections]) => {
+      if (!players) {
+        if (sleeperStatusBadge) sleeperStatusBadge.textContent = '🟡 Sleeper ADP: Offline';
+        return sleeperAdpMap;
+      }
       sleeperAdpMap.clear();
 
       const adpByPlayerId = new Map();
@@ -358,9 +362,12 @@ document.addEventListener('DOMContentLoaded', () => {
       playersArray = playersArray.filter(p => p.position === currentPosFilter);
     }
 
-    // Author Filter
+    // Author Filter (Matches written article takes OR official CSV positional rankings)
     if (currentAuthorFilter !== 'ALL') {
-      playersArray = playersArray.filter(p => p.author_takes_map.has(currentAuthorFilter));
+      playersArray = playersArray.filter(p => 
+        p.author_takes_map.has(currentAuthorFilter) || 
+        p.author_pos_ranks.has(currentAuthorFilter)
+      );
     }
 
     // Search Query Filter
