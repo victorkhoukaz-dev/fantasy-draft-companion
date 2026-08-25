@@ -288,6 +288,30 @@ body {
 .pos-chip[data-pos="WR"].active { background: var(--pos-wr); color: #090d16; border-color: var(--pos-wr); }
 .pos-chip[data-pos="TE"].active { background: var(--pos-te); color: #090d16; border-color: var(--pos-te); }
 
+.btn-hide-taken {
+  padding: 5px 12px;
+  border-radius: 16px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-hide-taken:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.btn-hide-taken.active {
+  background: rgba(244, 63, 94, 0.18);
+  border-color: rgba(244, 63, 94, 0.5);
+  color: #fda4af;
+}
+
 /* Main App Split Layout (Board + Right Sidebar) */
 .app-layout {
   display: flex;

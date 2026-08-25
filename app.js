@@ -46,7 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const authorFilterSelect = document.getElementById('authorFilterSelect');
   const hideTakenToggleBtn = document.getElementById('hideTakenToggleBtn');
   const resetDraftBtn = document.getElementById('resetDraftBtn');
-  const posChips = document.querySelectorAll('.pos-chip');
+  const posChips = document.querySelectorAll('.pos-chip[data-pos]');
   const activeCountEl = document.getElementById('activeCount');
   const totalCountEl = document.getElementById('totalCount');
   const starredCountEl = document.getElementById('starredCount');
@@ -1281,7 +1281,7 @@ document.addEventListener('DOMContentLoaded', () => {
     chip.addEventListener('click', () => {
       posChips.forEach(c => c.classList.remove('active'));
       chip.classList.add('active');
-      currentPosFilter = chip.getAttribute('data-pos');
+      currentPosFilter = chip.getAttribute('data-pos') || 'ALL';
       renderPlayerBoard();
     });
   });
