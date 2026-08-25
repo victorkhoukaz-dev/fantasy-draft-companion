@@ -330,7 +330,7 @@ def ingest_pdfs(force=False, target_file=None):
     - is_official_ranking: Set to true ONLY if this page is an official numerical rankings list/table/cheat sheet, NOT an article take.
     """
 
-    models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+    models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash-latest"]
 
     for pdf_path, filename, mtime, size in pending_files:
         logging.info(f"Processing PDF: {filename}...")
