@@ -38,6 +38,9 @@
       </div>
 
       <div class="header-right-actions">
+        <button id="openDraftSyncBtn" class="btn-sync-draft" title="Sync Live Sleeper Draft">
+          <span id="draftSyncIcon">⚡</span> <span id="draftSyncLabel">Sync Draft</span>
+        </button>
         <button id="toggleRosterSidebarBtn" class="btn-toggle-sidebar" title="Toggle My Roster Sidebar">
           <span>🏈 My Roster</span> <span id="rosterCountBadge">(0/15)</span>
         </button>
@@ -145,6 +148,65 @@
       <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px;">Side-by-side FantasyPoints analyst stance breakdown</p>
       <div id="compareGridContent" class="compare-grid">
         <!-- Injected side-by-side player columns -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Live Sleeper Draft Sync Modal -->
+  <div id="draftSyncModal" class="modal-backdrop" role="dialog" aria-hidden="true">
+    <div class="modal-sheet" style="max-width: 580px;">
+      <button class="modal-close-btn" id="draftSyncCloseBtn" title="Close (ESC)">&times;</button>
+      
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+        <span style="font-size: 1.5rem;">⚡</span>
+        <div>
+          <h2 style="font-size: 1.25rem; margin: 0; font-weight: 800;">Sleeper Live Draft Pilot</h2>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0;">Auto-sync picks, track live board & roster in real time</p>
+        </div>
+      </div>
+
+      <div class="sync-modal-body">
+        <div class="sync-input-group">
+          <label for="draftUrlInput" style="font-size: 0.82rem; font-weight: 700; color: #cbd5e1; display: block; margin-bottom: 6px;">
+            Sleeper Draft URL or Draft ID:
+          </label>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="draftUrlInput" class="search-input" style="flex: 1; padding: 10px 14px;" placeholder="e.g. https://sleeper.com/draft/nfl/112345678901234567" autocomplete="off" />
+            <button id="connectDraftBtn" class="btn-primary-action">
+              Connect
+            </button>
+          </div>
+          <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; display: block;">
+            Works with any Sleeper live draft or mock draft. No login required.
+          </span>
+        </div>
+
+        <!-- Connected Draft Info & Slot Selection -->
+        <div id="draftActiveSection" style="display: none; margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 16px;">
+          <div class="draft-info-banner" id="draftInfoBanner">
+            <!-- Draft metadata injected here -->
+          </div>
+
+          <div style="margin-top: 14px;">
+            <label for="myDraftSlotSelect" style="font-size: 0.82rem; font-weight: 700; color: #cbd5e1; display: block; margin-bottom: 6px;">
+              🏈 Select Your Team / Draft Slot:
+            </label>
+            <select id="myDraftSlotSelect" class="select-control" style="width: 100%; padding: 10px 12px; font-size: 0.9rem;">
+              <option value="">-- Choose Your Draft Slot --</option>
+            </select>
+          </div>
+
+          <div style="margin-top: 18px; display: flex; gap: 10px; flex-wrap: wrap;">
+            <button id="toggleSyncPollingBtn" class="btn-primary-action" style="flex: 1;">
+              🟢 Active: Auto-Syncing Picks
+            </button>
+            <button id="disconnectDraftBtn" class="btn-danger-action">
+              Disconnect
+            </button>
+          </div>
+        </div>
+
+        <div id="draftSyncStatusMsg" style="margin-top: 12px; font-size: 0.82rem; text-align: center; color: #94a3b8;"></div>
       </div>
     </div>
   </div>

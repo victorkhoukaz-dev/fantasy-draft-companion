@@ -72,6 +72,30 @@ document.addEventListener('DOMContentLoaded', () => {
   const compareGridContent = document.getElementById('compareGridContent');
   const compareModalCloseBtn = document.getElementById('compareModalCloseBtn');
 
+  // Draft Sync DOM Elements
+  const openDraftSyncBtn = document.getElementById('openDraftSyncBtn');
+  const draftSyncIcon = document.getElementById('draftSyncIcon');
+  const draftSyncLabel = document.getElementById('draftSyncLabel');
+  const draftSyncModal = document.getElementById('draftSyncModal');
+  const draftSyncCloseBtn = document.getElementById('draftSyncCloseBtn');
+  const draftUrlInput = document.getElementById('draftUrlInput');
+  const connectDraftBtn = document.getElementById('connectDraftBtn');
+  const draftActiveSection = document.getElementById('draftActiveSection');
+  const draftInfoBanner = document.getElementById('draftInfoBanner');
+  const myDraftSlotSelect = document.getElementById('myDraftSlotSelect');
+  const toggleSyncPollingBtn = document.getElementById('toggleSyncPollingBtn');
+  const disconnectDraftBtn = document.getElementById('disconnectDraftBtn');
+  const draftSyncStatusMsg = document.getElementById('draftSyncStatusMsg');
+
+  // Draft Sync State
+  let activeDraftId = localStorage.getItem('fp_draft_id') || null;
+  let myDraftSlot = parseInt(localStorage.getItem('fp_draft_slot'), 10) || null;
+  let draftSyncInterval = null;
+  let isDraftSyncActive = false;
+  let lastSyncedPicksCount = -1;
+  let draftUsersMap = new Map();
+  let draftMetaObj = null;
+
   // Initialize UI Controls
   if (sortBySelect) sortBySelect.value = sortBy;
   if (authorFilterSelect) {
@@ -1263,6 +1287,274 @@ document.addEventListener('DOMContentLoaded', () => {
       const escapeMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
       return escapeMap[match];
     });
+  }
+
+  // ==========================================
+  // SLEEPER LIVE DRAFT PILOT & SYNC ENGINE
+  // ==========================================
+
+  function extractSleeperDraftId(input) {
+    if (!input) return null;
+    const trimmed = input.trim();
+    const match = trimmed.match(/\b\d{16,20}\b/);
+    return match ? match[0] : null;
+  }
+
+  function connectToSleeperDraft(draftId) {
+    if (!draftId) return;
+    if (draftSyncStatusMsg) draftSyncStatusMsg.textContent = 'Connecting to Sleeper Draft...';
+
+    Promise.all([
+      fetch(`https://api.sleeper.app/v1/draft/${draftId}`).then(r => {
+        if (!r.ok) throw new Error('Draft not found on Sleeper');
+        return r.json();
+      }),
+      fetch(`https://api.sleeper.app/v1/draft/${draftId}/users`).then(r => r.ok ? r.json() : [])
+    ])
+    .then(([draft, users]) => {
+      if (!draft || !draft.draft_id) throw new Error('Invalid draft response');
+      draftMetaObj = draft;
+      activeDraftId = draft.draft_id;
+      localStorage.setItem('fp_draft_id', activeDraftId);
+
+      draftUsersMap.clear();
+      if (Array.isArray(users)) {
+        users.forEach(u => {
+          const name = u.metadata?.team_name || u.display_name || 'Team';
+          draftUsersMap.set(u.user_id, name);
+        });
+      }
+
+      // Populate draft slots dropdown
+      const teamsCount = draft.settings?.teams || 12;
+      const roundsCount = draft.settings?.rounds || 15;
+      const draftOrder = draft.draft_order || {};
+
+      if (myDraftSlotSelect) {
+        myDraftSlotSelect.innerHTML = '<option value="">-- Choose Your Draft Slot / Team --</option>';
+        for (let slot = 1; slot <= teamsCount; slot++) {
+          let slotOwnerName = `Team Slot ${slot}`;
+          for (const [userId, assignedSlot] of Object.entries(draftOrder)) {
+            if (assignedSlot === slot) {
+              const userName = draftUsersMap.get(userId) || 'User';
+              slotOwnerName = `Slot ${slot}: ${userName}`;
+              break;
+            }
+          }
+          const opt = document.createElement('option');
+          opt.value = slot;
+          opt.textContent = slotOwnerName;
+          if (myDraftSlot && myDraftSlot === slot) opt.selected = true;
+          myDraftSlotSelect.appendChild(opt);
+        }
+      }
+
+      if (draftInfoBanner) {
+        draftInfoBanner.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <strong>🏈 Draft: ${escapeHtml(draft.metadata?.name || 'Sleeper Draft')}</strong>
+            <span class="badge-pos QB" style="text-transform: uppercase;">${draft.status || 'Active'}</span>
+          </div>
+          <div style="color: var(--text-muted); font-size: 0.8rem;">
+            Format: <strong>${draft.type || 'Snake'}</strong> | Teams: <strong>${teamsCount}</strong> | Rounds: <strong>${roundsCount}</strong>
+          </div>
+        `;
+      }
+
+      if (draftActiveSection) draftActiveSection.style.display = 'block';
+      if (draftSyncStatusMsg) draftSyncStatusMsg.textContent = '✅ Connected! Select your team slot to start real-time sync.';
+
+      startDraftSyncPolling();
+    })
+    .catch(err => {
+      console.error('Sleeper draft connection error:', err);
+      if (draftSyncStatusMsg) {
+        draftSyncStatusMsg.innerHTML = `<span style="color: #f43f5e;">⚠️ Error: ${escapeHtml(err.message || 'Could not connect to draft')}</span>`;
+      }
+    });
+  }
+
+  function startDraftSyncPolling() {
+    if (!activeDraftId) return;
+    if (draftSyncInterval) clearInterval(draftSyncInterval);
+
+    isDraftSyncActive = true;
+    updateDraftSyncBadgeUI();
+    pollDraftPicks();
+
+    draftSyncInterval = setInterval(pollDraftPicks, 2500);
+  }
+
+  function pollDraftPicks() {
+    if (!activeDraftId || !isDraftSyncActive) return;
+
+    fetch(`https://api.sleeper.app/v1/draft/${activeDraftId}/picks`)
+      .then(r => r.ok ? r.json() : [])
+      .then(picks => {
+        if (!Array.isArray(picks)) return;
+
+        let hasNewPicks = (picks.length !== lastSyncedPicksCount);
+        lastSyncedPicksCount = picks.length;
+
+        picks.forEach(pick => {
+          const playerName = pick.metadata?.full_name || (pick.metadata?.first_name + ' ' + pick.metadata?.last_name) || '';
+          const canonicalKey = getCanonicalNameKey(playerName);
+          if (!canonicalKey) return;
+
+          const isMyPick = (myDraftSlot && pick.draft_slot === myDraftSlot);
+
+          if (isMyPick) {
+            if (!myRosterPlayers.has(canonicalKey)) {
+              myRosterPlayers.add(canonicalKey);
+              otherDraftedPlayers.delete(canonicalKey);
+              hasNewPicks = true;
+            }
+          } else {
+            if (!otherDraftedPlayers.has(canonicalKey)) {
+              otherDraftedPlayers.add(canonicalKey);
+              myRosterPlayers.delete(canonicalKey);
+              hasNewPicks = true;
+            }
+          }
+        });
+
+        if (hasNewPicks) {
+          localStorage.setItem('fp_my_roster', JSON.stringify(Array.from(myRosterPlayers)));
+          localStorage.setItem('fp_other_drafted', JSON.stringify(Array.from(otherDraftedPlayers)));
+          renderPlayerBoard();
+        }
+
+        const teams = draftMetaObj?.settings?.teams || 12;
+        const currentPickNo = picks.length + 1;
+        const currentRound = Math.ceil(currentPickNo / teams);
+        const pickInRound = currentPickNo % teams === 0 ? teams : currentPickNo % teams;
+
+        updateDraftSyncBadgeUI(currentRound, pickInRound, picks.length);
+      })
+      .catch(err => {
+        console.warn('Draft sync polling warning:', err);
+      });
+  }
+
+  function updateDraftSyncBadgeUI(round, pickInRound, totalPicks) {
+    if (!openDraftSyncBtn || !draftSyncIcon || !draftSyncLabel) return;
+
+    if (isDraftSyncActive && activeDraftId) {
+      openDraftSyncBtn.classList.add('syncing');
+      draftSyncIcon.textContent = '🟢';
+      if (round && totalPicks !== undefined) {
+        draftSyncLabel.textContent = `Sync: Rd ${round}.${pickInRound} (#${totalPicks})`;
+      } else {
+        draftSyncLabel.textContent = `Sync: Live`;
+      }
+      if (toggleSyncPollingBtn) {
+        toggleSyncPollingBtn.textContent = '🟢 Active: Auto-Syncing Picks';
+        toggleSyncPollingBtn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+      }
+    } else {
+      openDraftSyncBtn.classList.remove('syncing');
+      draftSyncIcon.textContent = '⚡';
+      draftSyncLabel.textContent = `Sync Draft`;
+      if (toggleSyncPollingBtn) {
+        toggleSyncPollingBtn.textContent = '⏸️ Paused: Click to Resume Sync';
+        toggleSyncPollingBtn.style.background = 'rgba(255,255,255,0.1)';
+      }
+    }
+  }
+
+  function disconnectDraftSync() {
+    if (draftSyncInterval) clearInterval(draftSyncInterval);
+    activeDraftId = null;
+    myDraftSlot = null;
+    isDraftSyncActive = false;
+    lastSyncedPicksCount = -1;
+    localStorage.removeItem('fp_draft_id');
+    localStorage.removeItem('fp_draft_slot');
+
+    if (draftActiveSection) draftActiveSection.style.display = 'none';
+    if (draftUrlInput) draftUrlInput.value = '';
+    if (draftSyncStatusMsg) draftSyncStatusMsg.textContent = 'Draft disconnected.';
+    updateDraftSyncBadgeUI();
+  }
+
+  // Draft Sync Modal & Button Event Listeners
+  if (openDraftSyncBtn) {
+    openDraftSyncBtn.addEventListener('click', () => {
+      if (draftSyncModal) {
+        draftSyncModal.classList.add('open');
+        draftSyncModal.setAttribute('aria-hidden', 'false');
+        if (activeDraftId && draftUrlInput) {
+          draftUrlInput.value = activeDraftId;
+        }
+      }
+    });
+  }
+
+  if (draftSyncCloseBtn) {
+    draftSyncCloseBtn.addEventListener('click', () => {
+      if (draftSyncModal) {
+        draftSyncModal.classList.remove('open');
+        draftSyncModal.setAttribute('aria-hidden', 'true');
+      }
+    });
+  }
+
+  if (connectDraftBtn) {
+    connectDraftBtn.addEventListener('click', () => {
+      const rawInput = draftUrlInput?.value || '';
+      const extractedId = extractSleeperDraftId(rawInput);
+      if (!extractedId) {
+        if (draftSyncStatusMsg) {
+          draftSyncStatusMsg.innerHTML = '<span style="color: #f43f5e;">⚠️ Invalid Draft URL or ID. Please check the link.</span>';
+        }
+        return;
+      }
+      connectToSleeperDraft(extractedId);
+    });
+  }
+
+  if (myDraftSlotSelect) {
+    myDraftSlotSelect.addEventListener('change', (e) => {
+      const slotVal = parseInt(e.target.value, 10);
+      myDraftSlot = slotVal || null;
+      if (myDraftSlot) {
+        localStorage.setItem('fp_draft_slot', myDraftSlot);
+        if (draftSyncStatusMsg) {
+          draftSyncStatusMsg.innerHTML = `✅ Saved! Tracking <strong>Slot ${myDraftSlot}</strong> as YOUR team.`;
+        }
+        // Force re-poll immediately to update my picks
+        pollDraftPicks();
+      } else {
+        localStorage.removeItem('fp_draft_slot');
+      }
+    });
+  }
+
+  if (toggleSyncPollingBtn) {
+    toggleSyncPollingBtn.addEventListener('click', () => {
+      if (isDraftSyncActive) {
+        isDraftSyncActive = false;
+        if (draftSyncInterval) clearInterval(draftSyncInterval);
+        updateDraftSyncBadgeUI();
+        if (draftSyncStatusMsg) draftSyncStatusMsg.textContent = '⏸️ Draft sync paused.';
+      } else {
+        startDraftSyncPolling();
+        if (draftSyncStatusMsg) draftSyncStatusMsg.textContent = '🟢 Draft sync resumed.';
+      }
+    });
+  }
+
+  if (disconnectDraftBtn) {
+    disconnectDraftBtn.addEventListener('click', () => {
+      if (confirm('Disconnect from this Sleeper draft?')) {
+        disconnectDraftSync();
+      }
+    });
+  }
+
+  // Auto-Resume Active Draft Connection on page load
+  if (activeDraftId) {
+    connectToSleeperDraft(activeDraftId);
   }
 
   // Unregister Service Worker to prevent caching issues
