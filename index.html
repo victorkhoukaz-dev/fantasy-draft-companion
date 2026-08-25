@@ -41,6 +41,9 @@
         <button id="openDraftSyncBtn" class="btn-sync-draft" title="Sync Live Sleeper Draft">
           <span id="draftSyncIcon">⚡</span> <span id="draftSyncLabel">Sync Draft</span>
         </button>
+        <button id="quickForceSyncBtn" class="btn-quick-sync" title="Force Refresh Live Picks Now" style="display: none;">
+          <span class="sync-spin-target">🔄</span> <span>Sync Now</span>
+        </button>
         <button id="toggleRosterSidebarBtn" class="btn-toggle-sidebar" title="Toggle My Roster Sidebar">
           <span>🏈 My Roster</span> <span id="rosterCountBadge">(0/15)</span>
         </button>
@@ -204,6 +207,10 @@
               Disconnect
             </button>
           </div>
+
+          <button id="modalForceSyncBtn" class="btn-primary-action" style="width: 100%; margin-top: 10px; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8;">
+            <span class="sync-spin-target">🔄</span> Force Refresh Picks Now
+          </button>
         </div>
 
         <div id="draftSyncStatusMsg" style="margin-top: 12px; font-size: 0.82rem; text-align: center; color: #94a3b8;"></div>

@@ -74,6 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Draft Sync DOM Elements
   const openDraftSyncBtn = document.getElementById('openDraftSyncBtn');
+  const quickForceSyncBtn = document.getElementById('quickForceSyncBtn');
   const draftSyncIcon = document.getElementById('draftSyncIcon');
   const draftSyncLabel = document.getElementById('draftSyncLabel');
   const draftSyncModal = document.getElementById('draftSyncModal');
@@ -84,6 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const draftInfoBanner = document.getElementById('draftInfoBanner');
   const myDraftSlotSelect = document.getElementById('myDraftSlotSelect');
   const toggleSyncPollingBtn = document.getElementById('toggleSyncPollingBtn');
+  const modalForceSyncBtn = document.getElementById('modalForceSyncBtn');
   const disconnectDraftBtn = document.getElementById('disconnectDraftBtn');
   const draftSyncStatusMsg = document.getElementById('draftSyncStatusMsg');
 
@@ -1304,6 +1306,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!draftId) return;
     if (draftSyncStatusMsg) draftSyncStatusMsg.textContent = 'Connecting to Sleeper Draft...';
 
+    // If switching to a brand new draft ID, reset previous picks so old mocks don't linger
+    if (activeDraftId && activeDraftId !== draftId) {
+      myRosterPlayers.clear();
+      otherDraftedPlayers.clear();
+      localStorage.removeItem('fp_my_roster');
+      localStorage.removeItem('fp_other_drafted');
+      lastSyncedPicksCount = -1;
+      renderPlayerBoard();
+    }
+
     Promise.all([
       fetch(`https://api.sleeper.app/v1/draft/${draftId}`).then(r => {
         if (!r.ok) throw new Error('Draft not found on Sleeper');
@@ -1362,7 +1374,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       if (draftActiveSection) draftActiveSection.style.display = 'block';
-      if (draftSyncStatusMsg) draftSyncStatusMsg.textContent = '✅ Connected! Select your team slot to start real-time sync.';
+      if (draftSyncStatusMsg) draftSyncStatusMsg.textContent = '✅ Connected! Auto-syncing live picks.';
 
       startDraftSyncPolling();
     })
@@ -1382,13 +1394,14 @@ document.addEventListener('DOMContentLoaded', () => {
     updateDraftSyncBadgeUI();
     pollDraftPicks();
 
-    draftSyncInterval = setInterval(pollDraftPicks, 2500);
+    // Fast 1.2s polling for real-time responsiveness
+    draftSyncInterval = setInterval(pollDraftPicks, 1200);
   }
 
   function pollDraftPicks() {
-    if (!activeDraftId || !isDraftSyncActive) return;
+    if (!activeDraftId || !isDraftSyncActive) return Promise.resolve();
 
-    fetch(`https://api.sleeper.app/v1/draft/${activeDraftId}/picks`)
+    return fetch(`https://api.sleeper.app/v1/draft/${activeDraftId}/picks?t=` + Date.now())
       .then(r => r.ok ? r.json() : [])
       .then(picks => {
         if (!Array.isArray(picks)) return;
@@ -1436,6 +1449,25 @@ document.addEventListener('DOMContentLoaded', () => {
       });
   }
 
+  function triggerForceRefresh() {
+    if (!activeDraftId) return;
+
+    // Spin 🔄 animation targets
+    document.querySelectorAll('.sync-spin-target').forEach(el => el.classList.add('spin-icon'));
+    if (draftSyncStatusMsg) draftSyncStatusMsg.textContent = '🔄 Fetching latest picks from Sleeper...';
+
+    pollDraftPicks()
+      .then(() => {
+        setTimeout(() => {
+          document.querySelectorAll('.sync-spin-target').forEach(el => el.classList.remove('spin-icon'));
+          if (draftSyncStatusMsg) draftSyncStatusMsg.textContent = '✅ Picks synced successfully!';
+        }, 300);
+      })
+      .catch(() => {
+        document.querySelectorAll('.sync-spin-target').forEach(el => el.classList.remove('spin-icon'));
+      });
+  }
+
   function updateDraftSyncBadgeUI(round, pickInRound, totalPicks) {
     if (!openDraftSyncBtn || !draftSyncIcon || !draftSyncLabel) return;
 
@@ -1447,6 +1479,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         draftSyncLabel.textContent = `Sync: Live`;
       }
+      if (quickForceSyncBtn) quickForceSyncBtn.style.display = 'inline-flex';
       if (toggleSyncPollingBtn) {
         toggleSyncPollingBtn.textContent = '🟢 Active: Auto-Syncing Picks';
         toggleSyncPollingBtn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
@@ -1455,6 +1488,7 @@ document.addEventListener('DOMContentLoaded', () => {
       openDraftSyncBtn.classList.remove('syncing');
       draftSyncIcon.textContent = '⚡';
       draftSyncLabel.textContent = `Sync Draft`;
+      if (quickForceSyncBtn) quickForceSyncBtn.style.display = 'none';
       if (toggleSyncPollingBtn) {
         toggleSyncPollingBtn.textContent = '⏸️ Paused: Click to Resume Sync';
         toggleSyncPollingBtn.style.background = 'rgba(255,255,255,0.1)';
@@ -1487,6 +1521,19 @@ document.addEventListener('DOMContentLoaded', () => {
           draftUrlInput.value = activeDraftId;
         }
       }
+    });
+  }
+
+  if (quickForceSyncBtn) {
+    quickForceSyncBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      triggerForceRefresh();
+    });
+  }
+
+  if (modalForceSyncBtn) {
+    modalForceSyncBtn.addEventListener('click', () => {
+      triggerForceRefresh();
     });
   }
 
