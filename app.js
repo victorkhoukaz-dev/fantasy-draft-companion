@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let searchQuery = '';
   let sortBy = localStorage.getItem('fp_sort_by') || 'adp';
   let isSidebarCollapsed = localStorage.getItem('fp_sidebar_collapsed') === 'true';
+  let hideTakenPlayers = localStorage.getItem('fp_hide_taken') === 'true';
 
   // NFL Team Bye Weeks Database
   const TEAM_BYE_WEEKS = {
@@ -43,6 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const searchInput = document.getElementById('searchInput');
   const sortBySelect = document.getElementById('sortBySelect');
   const authorFilterSelect = document.getElementById('authorFilterSelect');
+  const hideTakenToggleBtn = document.getElementById('hideTakenToggleBtn');
   const resetDraftBtn = document.getElementById('resetDraftBtn');
   const posChips = document.querySelectorAll('.pos-chip');
   const activeCountEl = document.getElementById('activeCount');
@@ -400,6 +402,28 @@ document.addEventListener('DOMContentLoaded', () => {
       playersArray = playersArray.filter(p => starredPlayers.has(p.canonical_key));
     } else if (currentPosFilter !== 'ALL') {
       playersArray = playersArray.filter(p => p.position === currentPosFilter);
+    }
+
+    // Update Hide Taken Toggle Button State
+    if (hideTakenToggleBtn) {
+      if (hideTakenPlayers) {
+        hideTakenToggleBtn.classList.add('active');
+        hideTakenToggleBtn.innerHTML = '🚫 Taken: Hidden';
+        hideTakenToggleBtn.style.background = 'rgba(244, 63, 94, 0.2)';
+        hideTakenToggleBtn.style.borderColor = 'rgba(244, 63, 94, 0.5)';
+        hideTakenToggleBtn.style.color = '#fda4af';
+      } else {
+        hideTakenToggleBtn.classList.remove('active');
+        hideTakenToggleBtn.innerHTML = '👁️ Hide Taken';
+        hideTakenToggleBtn.style.background = '';
+        hideTakenToggleBtn.style.borderColor = '';
+        hideTakenToggleBtn.style.color = '';
+      }
+    }
+
+    // Hide Taken / Drafted Players Filter
+    if (hideTakenPlayers) {
+      playersArray = playersArray.filter(p => !otherDraftedPlayers.has(p.canonical_key) && !myRosterPlayers.has(p.canonical_key));
     }
 
     // Author Filter
@@ -1224,6 +1248,14 @@ document.addEventListener('DOMContentLoaded', () => {
     searchQuery = e.target.value;
     renderPlayerBoard();
   });
+
+  if (hideTakenToggleBtn) {
+    hideTakenToggleBtn.addEventListener('click', () => {
+      hideTakenPlayers = !hideTakenPlayers;
+      localStorage.setItem('fp_hide_taken', hideTakenPlayers);
+      renderPlayerBoard();
+    });
+  }
 
   if (sortBySelect) {
     sortBySelect.addEventListener('change', (e) => {
