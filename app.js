@@ -882,8 +882,7 @@ document.addEventListener('DOMContentLoaded', () => {
           No players drafted yet.<br>Click "ME" on player rows to build your roster!
         </div>
       `;
-      byeWarningArea.style.display = 'none';
-      needWarningArea.style.display = 'none';
+      if (byeWarningArea) byeWarningArea.style.display = 'none';
       return;
     }
 
@@ -1374,7 +1373,26 @@ document.addEventListener('DOMContentLoaded', () => {
           const canonicalKey = getCanonicalNameKey(playerName);
           if (!canonicalKey) return;
 
-          const isMyPick = (myDraftSlot && pick.draft_slot === myDraftSlot);
+          // Register player in groupedPlayersMap if not present yet (ensures DEF, K, or rookies show up in My Roster)
+          if (!groupedPlayersMap.has(canonicalKey)) {
+            groupedPlayersMap.set(canonicalKey, {
+              canonical_key: canonicalKey,
+              player_name: playerName,
+              position: pick.metadata?.position || 'FLEX',
+              team: pick.metadata?.team || 'NFL',
+              sleeper_adp: 999,
+              pos_rank: '—',
+              pos_num: 99,
+              raw_takes: [],
+              author_takes_map: new Map(),
+              author_pos_ranks: new Map()
+            });
+          }
+
+          // Robust check for user's draft slot
+          const slotMatch = (myDraftSlot !== null && myDraftSlot !== undefined && Number(pick.draft_slot) === Number(myDraftSlot));
+          const userMatch = (myDraftSlot !== null && myDraftSlot !== undefined && draftMetaObj?.draft_order && Number(draftMetaObj.draft_order[pick.picked_by]) === Number(myDraftSlot));
+          const isMyPick = Boolean(slotMatch || userMatch);
 
           if (isMyPick) {
             if (!myRosterPlayers.has(canonicalKey)) {
