@@ -61,34 +61,38 @@
         </svg>
         <input type="text" id="searchInput" class="search-input" placeholder="Search player, team, author, stance..." autocomplete="off">
       </div>
-      
-      <select id="sortBySelect" class="select-control" title="Sort Board">
-        <option value="adp">Sort: Sleeper PPR ADP</option>
-        <option value="pos_rank">Sort: FP Positional Rank (RB1, WR1...)</option>
-        <option value="stance">Sort: 🔥 Stance (Must-Draft First)</option>
-      </select>
 
       <button id="resetDraftBtn" class="toggle-btn" title="Reset Draft Status">
-        <span>🔄</span>
+        <span>🔄 Reset</span>
       </button>
     </div>
 
     <!-- Position & Author Filter Chips -->
     <nav class="filter-row">
-      <button class="pos-chip active" data-pos="ALL">ALL</button>
-      <button class="pos-chip" data-pos="DECK">⭐ On Deck (<span id="starredCount">0</span>)</button>
-      <button class="pos-chip" data-pos="QB">QB</button>
-      <button class="pos-chip" data-pos="RB">RB</button>
-      <button class="pos-chip" data-pos="WR">WR</button>
-      <button class="pos-chip" data-pos="TE">TE</button>
+      <!-- Ranking Source Selector (Prominent Left) -->
+      <div class="rank-source-wrapper">
+        <label for="authorFilterSelect" class="rank-source-label">Rank Source:</label>
+        <select id="authorFilterSelect" class="select-control rank-source-select" title="Select Ranking Source">
+          <option value="Consensus" selected>🏆 Consensus Rankings</option>
+          <option value="John Hansen">John Hansen</option>
+          <option value="Scott Barrett">Scott Barrett</option>
+          <option value="Graham Barfield">Graham Barfield</option>
+        </select>
+      </div>
+
+      <div class="pos-chips-group">
+        <button class="pos-chip active" data-pos="ALL">ALL</button>
+        <button class="pos-chip" data-pos="DECK">⭐ On Deck (<span id="starredCount">0</span>)</button>
+        <button class="pos-chip" data-pos="QB">QB</button>
+        <button class="pos-chip" data-pos="RB">RB</button>
+        <button class="pos-chip" data-pos="WR">WR</button>
+        <button class="pos-chip" data-pos="TE">TE</button>
+      </div>
 
       <div style="margin-left: auto; display: flex; align-items: center; gap: 6px;">
         <button id="hideTakenToggleBtn" class="btn-hide-taken" style="font-size: 0.75rem; padding: 5px 10px; font-weight: 700;" title="Hide/Show taken players from the board">
           👁️ Hide Taken
         </button>
-        <select id="authorFilterSelect" class="select-control" style="font-size: 0.75rem; padding: 4px 8px;" title="Filter by Analyst">
-          <option value="ALL">✍️ All Analysts</option>
-        </select>
       </div>
     </nav>
   </header>
@@ -97,8 +101,21 @@
   <div class="app-layout">
     <!-- Left Main Board -->
     <main class="board-area">
+      <!-- Tabular Column Headers -->
+      <div class="board-table-header">
+        <div class="th-actions">DRAFT</div>
+        <div class="th-rank sortable" id="thRank" title="Sort by Rank">
+          <span>RANK</span> <span class="sort-indicator" id="rankSortIndicator">↕</span>
+        </div>
+        <div class="th-adp sortable" id="thAdp" title="Sort by Sleeper ADP">
+          <span>ADP</span> <span class="sort-indicator" id="adpSortIndicator">↕</span>
+        </div>
+        <div class="th-player">PLAYER</div>
+        <div class="th-stances">ANALYST TAKES & STANCES</div>
+      </div>
+
       <div id="playerGrid" class="player-list-view">
-        <!-- Player compact rows or cards injected by app.js -->
+        <!-- Player compact rows injected by app.js -->
       </div>
 
       <div id="emptyState" class="empty-state" style="display: none;">
@@ -118,22 +135,11 @@
       </div>
 
       <div id="byeWarningArea"></div>
-      <div id="needWarningArea"></div>
 
       <div id="sidebarRosterList" class="sidebar-roster-list">
         <!-- Injected lineup slots -->
       </div>
     </aside>
-  </div>
-
-  <!-- Floating Head-to-Head Compare Bar -->
-  <div id="compareBar" class="compare-floating-bar">
-    <div class="compare-selected-names" id="selectedCompareList">
-      <!-- Selected player chips -->
-    </div>
-    <button id="triggerCompareBtn" class="btn-trigger-compare">
-      Compare (0)
-    </button>
   </div>
 
   <!-- Player Deep Dive Modal -->
@@ -142,18 +148,6 @@
       <button class="modal-close-btn" id="modalCloseBtn" title="Close (ESC)">&times;</button>
       <div id="modalContent">
         <!-- Injected player consensus details -->
-      </div>
-    </div>
-  </div>
-
-  <!-- Head-to-Head Comparison Modal -->
-  <div id="compareModal" class="modal-backdrop" role="dialog" aria-hidden="true">
-    <div class="modal-sheet" style="max-width: 900px;">
-      <button class="modal-close-btn" id="compareModalCloseBtn" title="Close (ESC)">&times;</button>
-      <h2 style="font-size: 1.3rem; margin-bottom: 2px;">⚡ Head-to-Head Comparison</h2>
-      <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px;">Side-by-side FantasyPoints analyst stance breakdown</p>
-      <div id="compareGridContent" class="compare-grid">
-        <!-- Injected side-by-side player columns -->
       </div>
     </div>
   </div>

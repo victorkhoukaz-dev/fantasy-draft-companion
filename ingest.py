@@ -330,7 +330,7 @@ def ingest_pdfs(force=False, target_file=None):
     - is_official_ranking: Set to true ONLY if this page is an official numerical rankings list/table/cheat sheet, NOT an article take.
     """
 
-    models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash-latest"]
+    models_to_try = ["gemini-2.0-flash", "gemini-2.5-flash"]
 
     for pdf_path, filename, mtime, size in pending_files:
         logging.info(f"Processing PDF: {filename}...")
@@ -385,6 +385,7 @@ def ingest_pdfs(force=False, target_file=None):
                 if response and response.text:
                     try:
                         extracted = json.loads(response.text)
+                        takes = extracted.get("takes", [])
                         for t in takes:
                             t["source_file"] = filename
                         file_takes.extend(takes)
@@ -478,6 +479,9 @@ def parse_csv_rankings(raw_dir):
                     elif author == "Scott Barrett" and str(target).lower() in ["true", "1", "target", "yes"]:
                         stance = "Must-Draft"
 
+                    is_top200 = "top-200" in filename.lower()
+                    overall_num = int(rank_str) if (is_top200 and rank_str.isdigit()) else None
+
                     take = {
                         "player_name": name.strip(),
                         "position": pos,
@@ -485,11 +489,11 @@ def parse_csv_rankings(raw_dir):
                         "author": author,
                         "stance": stance,
                         "target_round_advice": f"Tier {tier}" if tier else "",
-                        "key_reason": f"Official {author} positional ranking: {pos_rank} (Tier {tier})" if tier else f"Official {author} positional ranking: {pos_rank}",
+                        "key_reason": f"Official {author} Top-200 Overall Rank #{rank_str}" if is_top200 else (f"Official {author} positional ranking: {pos_rank} (Tier {tier})" if tier else f"Official {author} positional ranking: {pos_rank}"),
                         "upside_metric": f"Official {author} Rank #{rank_str}",
                         "risk_factor": "",
-                        "fp_pos_rank": pos_rank,
-                        "fp_overall_rank": int(rank_str) if rank_str.isdigit() else None,
+                        "fp_pos_rank": None if is_top200 else pos_rank,
+                        "fp_overall_rank": overall_num,
                         "is_official_ranking": True
                     }
                     csv_takes.append(take)

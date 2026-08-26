@@ -11,9 +11,10 @@ document.addEventListener('DOMContentLoaded', () => {
   let selectedForCompare = new Set(); // max 3 player_names
   
   let currentPosFilter = 'ALL';
-  let currentAuthorFilter = 'ALL';
+  let currentAuthorFilter = localStorage.getItem('fp_rank_source') || 'Consensus';
   let searchQuery = '';
-  let sortBy = localStorage.getItem('fp_sort_by') || 'adp';
+  const savedSort = localStorage.getItem('fp_sort_by');
+  let sortBy = (savedSort === 'pos_rank' || savedSort === 'adp') ? savedSort : 'pos_rank';
   let isSidebarCollapsed = localStorage.getItem('fp_sidebar_collapsed') === 'true';
   let hideTakenPlayers = localStorage.getItem('fp_hide_taken') === 'true';
 
@@ -53,26 +54,23 @@ document.addEventListener('DOMContentLoaded', () => {
   const rosterCountBadge = document.getElementById('rosterCountBadge');
   const sleeperStatusBadge = document.getElementById('sleeperStatusBadge');
   
+  // Tabular Column Headers
+  const thRank = document.getElementById('thRank');
+  const thAdp = document.getElementById('thAdp');
+  const rankSortIndicator = document.getElementById('rankSortIndicator');
+  const adpSortIndicator = document.getElementById('adpSortIndicator');
+  
   // Right Sidebar Elements
   const rosterSidebar = document.getElementById('rosterSidebar');
   const toggleRosterSidebarBtn = document.getElementById('toggleRosterSidebarBtn');
   const closeSidebarBtn = document.getElementById('closeSidebarBtn');
   const sidebarRosterList = document.getElementById('sidebarRosterList');
   const byeWarningArea = document.getElementById('byeWarningArea');
-  const needWarningArea = document.getElementById('needWarningArea');
 
   // Modals
-  const compareBar = document.getElementById('compareBar');
-  const selectedCompareList = document.getElementById('selectedCompareList');
-  const triggerCompareBtn = document.getElementById('triggerCompareBtn');
-  
   const playerModal = document.getElementById('playerModal');
   const modalContent = document.getElementById('modalContent');
   const modalCloseBtn = document.getElementById('modalCloseBtn');
-  
-  const compareModal = document.getElementById('compareModal');
-  const compareGridContent = document.getElementById('compareGridContent');
-  const compareModalCloseBtn = document.getElementById('compareModalCloseBtn');
 
   // Draft Sync DOM Elements
   const openDraftSyncBtn = document.getElementById('openDraftSyncBtn');
@@ -101,10 +99,13 @@ document.addEventListener('DOMContentLoaded', () => {
   let draftMetaObj = null;
 
   // Initialize UI Controls
-  if (sortBySelect) sortBySelect.value = sortBy;
   if (authorFilterSelect) {
+    authorFilterSelect.value = currentAuthorFilter;
     authorFilterSelect.addEventListener('change', (e) => {
       currentAuthorFilter = e.target.value;
+      localStorage.setItem('fp_rank_source', currentAuthorFilter);
+      sortBy = 'pos_rank';
+      localStorage.setItem('fp_sort_by', 'pos_rank');
       renderPlayerBoard();
     });
   }
@@ -169,19 +170,19 @@ document.addEventListener('DOMContentLoaded', () => {
       const sortedPlayers = Object.values(players)
         .filter(p => p && p.full_name && p.position)
         .map(p => {
-          const realAdp = adpByPlayerId.get(p.player_id) || p.search_rank || 300;
+          const realAdp = (adpByPlayerId.has(p.player_id)) ? adpByPlayerId.get(p.player_id) : (p.search_rank || 300);
           return {
             player: p,
-            adp: Math.round(realAdp),
+            exact_adp: Number(realAdp),
             pos: p.position
           };
         })
-        .filter(item => item.adp < 500)
-        .sort((a, b) => a.adp - b.adp);
+        .filter(item => item.exact_adp < 500)
+        .sort((a, b) => a.exact_adp - b.exact_adp);
 
       const posCounters = { QB: 0, RB: 0, WR: 0, TE: 0 };
 
-      sortedPlayers.forEach(item => {
+      sortedPlayers.forEach((item, index) => {
         const p = item.player;
         const norm = getCanonicalNameKey(p.full_name);
         const pos = item.pos || 'FLEX';
@@ -190,15 +191,18 @@ document.addEventListener('DOMContentLoaded', () => {
           posCounters[pos]++;
         }
 
+        const overallRank = index + 1;
+        const posNum = posCounters[pos] || 99;
         const posRank = posCounters[pos] ? `${pos}${posCounters[pos]}` : pos;
 
         sleeperAdpMap.set(norm, {
-          adp: item.adp,
+          adp: overallRank,
+          exact_adp: item.exact_adp,
           position: pos,
           team: p.team || 'NFL',
           full_name: p.full_name,
           pos_rank: posRank,
-          pos_num: posCounters[pos] || 99
+          pos_num: posNum
         });
       });
 
@@ -297,6 +301,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
 
+      if (take.fp_overall_rank && (!playerObj.fp_overall_rank || take.author === 'FantasyPoints Staff')) {
+        playerObj.fp_overall_rank = take.fp_overall_rank;
+      }
+
       // Check if take is a generic CSV ranking entry (no written commentary)
       const isGenericCsvRank = take.is_official_ranking && 
         (!take.stance || take.stance === 'Bullish') && 
@@ -341,56 +349,26 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     if (authorFilterSelect) {
-      const selected = authorFilterSelect.value || 'ALL';
-      authorFilterSelect.innerHTML = '<option value="ALL">✍️ All Analysts</option>';
-      Array.from(allAuthors).sort().forEach(auth => {
-        const opt = document.createElement('option');
-        opt.value = auth;
-        opt.textContent = `✍️ ${auth}`;
-        authorFilterSelect.appendChild(opt);
-      });
+      const selected = localStorage.getItem('fp_rank_source') || 'Consensus';
+      authorFilterSelect.innerHTML = `
+        <option value="Consensus">🏆 Consensus Rankings</option>
+        <option value="John Hansen">John Hansen</option>
+        <option value="Scott Barrett">Scott Barrett</option>
+        <option value="Graham Barfield">Graham Barfield</option>
+      `;
       authorFilterSelect.value = selected;
     }
 
-    if (sortBySelect) {
-      const currentSort = sortBySelect.value || 'adp';
-      sortBySelect.innerHTML = `
-        <option value="adp">Sort: Sleeper PPR ADP</option>
-        <option value="author_pos_Scott Barrett">Sort: ✍️ Scott Barrett Positional Rank</option>
-        <option value="author_pos_John Hansen">Sort: ✍️ John Hansen Positional Rank</option>
-        <option value="author_pos_FantasyPoints Staff">Sort: 📊 FP Staff (Consensus Projections)</option>
-        <option value="stance">Sort: 🔥 Stance (Must-Draft First)</option>
-      `;
-      sortBySelect.value = currentSort;
-    }
-
     groupedPlayersMap.forEach(p => {
-      p.display_pos_rank = p.pos_rank;
-      p.fp_pos_num = p.pos_num;
-    });
-  }
-
-  // Update Sort Options State (Lock positional sorts on ALL or DECK tabs)
-  function updateSortOptionsState() {
-    if (!sortBySelect) return;
-    const isGlobalView = (currentPosFilter === 'ALL' || currentPosFilter === 'DECK');
-
-    Array.from(sortBySelect.options).forEach(opt => {
-      if (opt.value.startsWith('author_pos_')) {
-        opt.disabled = isGlobalView;
+      p.display_pos_rank = p.fp_pos_rank || p.pos_rank;
+      if (!p.fp_pos_num) {
+        p.fp_pos_num = p.pos_num || 999;
       }
     });
-
-    if (isGlobalView && sortBy.startsWith('author_pos_')) {
-      sortBy = 'adp';
-      sortBySelect.value = 'adp';
-      localStorage.setItem('fp_sort_by', 'adp');
-    }
   }
 
   // Render Player Board & Sidebar Panel
   function renderPlayerBoard() {
-    updateSortOptionsState();
 
     playerGrid.innerHTML = '';
     playerGrid.className = 'player-list-view';
@@ -426,10 +404,7 @@ document.addEventListener('DOMContentLoaded', () => {
       playersArray = playersArray.filter(p => !otherDraftedPlayers.has(p.canonical_key) && !myRosterPlayers.has(p.canonical_key));
     }
 
-    // Author Filter
-    if (currentAuthorFilter !== 'ALL') {
-      playersArray = playersArray.filter(p => p.author_takes_map.has(currentAuthorFilter));
-    }
+
 
     // Search Query Filter
     if (searchQuery) {
@@ -447,47 +422,59 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // Context-Aware Positional Sorting (Official Ranks ➔ Stance Hierarchy Fallback ➔ ADP)
+    // Update Rank Source Dropdown State (Disable other authors on ALL / DECK tabs)
+    const isGlobalView = (currentPosFilter === 'ALL' || currentPosFilter === 'DECK');
+    if (authorFilterSelect) {
+      Array.from(authorFilterSelect.options).forEach(opt => {
+        if (opt.value !== 'Consensus') {
+          opt.disabled = isGlobalView;
+        }
+      });
+      if (isGlobalView) {
+        authorFilterSelect.value = 'Consensus';
+        currentAuthorFilter = 'Consensus';
+      }
+    }
+
+    // Context-Aware Positional Sorting (Pure Numerical Rank or ADP)
     playersArray.sort((a, b) => {
-      if (sortBy.startsWith('author_pos_')) {
-        const targetAuthor = sortBy.replace('author_pos_', '');
-        const authPosA = a.author_pos_ranks?.get(targetAuthor)?.pos_num;
-        const authPosB = b.author_pos_ranks?.get(targetAuthor)?.pos_num;
+      if (sortBy === 'pos_rank' || sortBy === 'rank') {
+        if (isGlobalView) {
+          const rankA = a.fp_overall_rank || 999;
+          const rankB = b.fp_overall_rank || 999;
+          if (rankA !== rankB) return rankA - rankB;
+          return a.sleeper_adp - b.sleeper_adp;
+        }
 
-        // If official ranking file exists for both, sort by exact numerical rank!
-        if (authPosA && authPosB) return authPosA - authPosB;
-        if (authPosA) return -1;
-        if (authPosB) return 1;
+        const isAnalyst = (currentAuthorFilter && currentAuthorFilter !== 'Consensus' && currentAuthorFilter !== 'ALL');
+        const rankA = (isAnalyst ? a.author_pos_ranks?.get(currentAuthorFilter)?.pos_num : null) || a.fp_pos_num || 999;
+        const rankB = (isAnalyst ? b.author_pos_ranks?.get(currentAuthorFilter)?.pos_num : null) || b.fp_pos_num || 999;
 
-        // Smart Fallback: Sort by that specific author's stances!
-        const authTakeA = a.author_takes_map.get(targetAuthor);
-        const authTakeB = b.author_takes_map.get(targetAuthor);
-
-        const stanceA = authTakeA ? getPrimaryStance(Array.from(authTakeA.stances)) : null;
-        const stanceB = authTakeB ? getPrimaryStance(Array.from(authTakeB.stances)) : null;
-
-        const hierarchy = { 'Exodia': 1, 'Must-Draft': 2, 'Hansen 50': 3, 'Hansen-50': 3, 'Breakout': 4, 'Bullish': 5, 'Sleeper': 6, 'Dirty Thirty': 7, 'Dirty-Thirty': 7, 'Bearish': 8, 'Avoid': 9 };
-        const scoreA = stanceA ? (hierarchy[stanceA] || 10) : 99;
-        const scoreB = stanceB ? (hierarchy[stanceB] || 10) : 99;
-
-        if (scoreA !== scoreB) return scoreA - scoreB;
-        return a.sleeper_adp - b.sleeper_adp;
-      } else if (sortBy === 'pos_rank' || sortBy === 'rank') {
-        const fpRankA = a.fp_pos_num || a.author_pos_ranks?.get('FantasyPoints Staff')?.pos_num || a.pos_num;
-        const fpRankB = b.fp_pos_num || b.author_pos_ranks?.get('FantasyPoints Staff')?.pos_num || b.pos_num;
-        if (fpRankA !== fpRankB) return fpRankA - fpRankB;
-        return a.sleeper_adp - b.sleeper_adp;
-      } else if (sortBy === 'stance') {
-        const stanceA = getPrimaryStanceForPlayer(a);
-        const stanceB = getPrimaryStanceForPlayer(b);
-        const hierarchy = { 'Exodia': 1, 'Must-Draft': 2, 'Hansen 50': 3, 'Hansen-50': 3, 'Breakout': 4, 'Bullish': 5, 'Sleeper': 6, 'Dirty Thirty': 7, 'Dirty-Thirty': 7, 'Bearish': 8, 'Avoid': 9 };
-        const scoreA = hierarchy[stanceA] || 10;
-        const scoreB = hierarchy[stanceB] || 10;
-        if (scoreA !== scoreB) return scoreA - scoreB;
+        if (rankA !== rankB) return rankA - rankB;
         return a.sleeper_adp - b.sleeper_adp;
       }
       return a.sleeper_adp - b.sleeper_adp;
     });
+
+    // Update Table Header Sort Indicators
+    if (thRank && rankSortIndicator && thAdp && adpSortIndicator) {
+      if (sortBy === 'pos_rank' || sortBy === 'rank') {
+        thRank.classList.add('active-sort');
+        thAdp.classList.remove('active-sort');
+        rankSortIndicator.textContent = '▼';
+        adpSortIndicator.textContent = '↕';
+      } else if (sortBy === 'adp') {
+        thAdp.classList.add('active-sort');
+        thRank.classList.remove('active-sort');
+        adpSortIndicator.textContent = '▲';
+        rankSortIndicator.textContent = '↕';
+      } else {
+        thRank.classList.remove('active-sort');
+        thAdp.classList.remove('active-sort');
+        rankSortIndicator.textContent = '↕';
+        adpSortIndicator.textContent = '↕';
+      }
+    }
 
     let visibleCount = 0;
 
@@ -509,8 +496,6 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       emptyState.style.display = 'none';
     }
-
-    updateCompareFloatingBar();
   }
 
   // Helper: Deduplicate near-identical sentences & filter out AI junk phrases
@@ -684,7 +669,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return signature;
   }
 
-  // Create Compact Row
+  // Create Compact Tabular Row
   function createCompactPlayerRow(player, isDraftedMe, isDraftedOther) {
     const row = document.createElement('div');
     const isDrafted = isDraftedMe || isDraftedOther;
@@ -700,7 +685,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const isStarred = starredPlayers.has(player.canonical_key);
     const rawTargetList = player.raw_takes.map(t => t.target_round_advice || t.tier_or_target_round).filter(Boolean);
     const topTargetStr = consolidateTargetRoundAdvice(rawTargetList);
-    const isCheckedForCompare = selectedForCompare.has(player.canonical_key);
     const adpDisplay = format12TeamAdpDisplay(player.sleeper_adp);
 
     const consensusInfo = evaluatePlayerConsensus(player);
@@ -714,26 +698,55 @@ document.addEventListener('DOMContentLoaded', () => {
       stancePills.push(`<span class="badge-stance ${consensusInfo.class}">${consensusInfo.label}</span>`);
     }
 
-    // Clean Positional Badge (Defaults to Official FantasyPoints Staff Positional Rank, or Sleeper ADP fallback)
-    let displayedPosBadge = player.fp_pos_rank || player.author_pos_ranks?.get('FantasyPoints Staff')?.pos_rank || player.pos_rank;
-    if (sortBy.startsWith('author_pos_')) {
-      const targetAuthor = sortBy.replace('author_pos_', '');
-      const authPosObj = player.author_pos_ranks?.get(targetAuthor);
-      const shortAuthor = targetAuthor.split(' ')[0];
-      if (authPosObj && authPosObj.pos_rank) {
-        displayedPosBadge = `${shortAuthor}: ${authPosObj.pos_rank}`;
-      } else if (player.author_takes_map.has(targetAuthor)) {
-        const authStance = getPrimaryStance(Array.from(player.author_takes_map.get(targetAuthor).stances));
-        displayedPosBadge = `${shortAuthor}: ${getIconForStance(authStance)}`;
+    // 1. Calculate Active Rank Badge (from selected analyst or consensus)
+    const isSinglePosView = (currentPosFilter !== 'ALL' && currentPosFilter !== 'DECK');
+    let displayedRank = '—';
+
+    if (!isSinglePosView) {
+      // In ALL or DECK view: display the Top-200 overall rank number!
+      displayedRank = player.fp_overall_rank ? `${player.fp_overall_rank}` : '—';
+    } else {
+      // In Position views: display positional numerical rank!
+      let rawRankStr = player.fp_pos_rank || player.pos_rank || '—';
+      if (currentAuthorFilter && currentAuthorFilter !== 'Consensus' && currentAuthorFilter !== 'ALL') {
+        const authPosObj = player.author_pos_ranks?.get(currentAuthorFilter);
+        if (authPosObj && authPosObj.pos_rank) {
+          rawRankStr = authPosObj.pos_rank;
+        }
       }
+      displayedRank = (rawRankStr !== '—') ? rawRankStr.replace(/^[A-Za-z]+/, '') : '—';
     }
 
+    // 2. Format ADP Column
+    let adpMain = '—';
+    let adpSub = '';
+
+    if (player.sleeper_adp && player.sleeper_adp < 300) {
+      const overallAdp = player.sleeper_adp;
+      const round = Math.ceil(overallAdp / 12);
+      const pickInRound = Math.floor(((overallAdp - 1) % 12) + 1);
+
+      if (isSinglePosView && player.pos_num) {
+        // Show pure positional ADP number in position view (e.g. "1")
+        adpMain = `${player.pos_num}`;
+        adpSub = `#${overallAdp} (Rd ${round}.${pickInRound})`;
+      } else {
+        adpMain = `#${overallAdp}`;
+        adpSub = `Rd ${round}.${pickInRound}`;
+      }
+    } else {
+      adpMain = '300+';
+      adpSub = 'Late';
+    }
+
+    const byeWeek = TEAM_BYE_WEEKS[player.team] ? `Bye ${TEAM_BYE_WEEKS[player.team]}` : '';
+
     row.innerHTML = `
-      <div class="row-left">
+      <!-- 1. ACTIONS COLUMN -->
+      <div class="col-actions">
         <button class="btn-star ${isStarred ? 'starred' : ''}" data-player="${escapeHtml(player.canonical_key)}" onclick="event.stopPropagation();" title="Pin to On Deck">
           ${isStarred ? '⭐' : '☆'}
         </button>
-
         <div class="draft-action-group">
           <button class="btn-draft-me ${isDraftedMe ? 'active' : ''}" data-player="${escapeHtml(player.canonical_key)}" onclick="event.stopPropagation();" title="Draft for MY Team">
             ${isDraftedMe ? 'MINE' : 'ME'}
@@ -742,32 +755,37 @@ document.addEventListener('DOMContentLoaded', () => {
             ${isDraftedOther ? 'TAKEN' : 'OFF'}
           </button>
         </div>
+      </div>
 
-        <span class="badge-pos ${player.position}">${escapeHtml(displayedPosBadge)}</span>
+      <!-- 2. RANK COLUMN -->
+      <div class="col-rank">
+        <span class="rank-num-badge">${escapeHtml(displayedRank)}</span>
+      </div>
 
-        <div class="row-player-info">
-          <div class="row-name-line">
-            <span class="row-player-name ${isDraftedOther ? 'card-drafted-strike' : ''}">${escapeHtml(player.player_name)}</span>
-            <span class="team-badge">${escapeHtml(player.team)}</span>
-          </div>
+      <!-- 3. ADP COLUMN -->
+      <div class="col-adp">
+        <span class="adp-text">${adpMain}</span>
+        <span class="adp-subtext">${adpSub}</span>
+      </div>
 
-          <div class="row-sub-line">
-            <span class="adp-tag">Sleeper: ${adpDisplay}</span>
-            ${authors.length > 0 ? `<span class="author-approval-tag">✍️ ${authors.join(', ')}</span>` : ''}
-            ${(topTargetStr && consensusInfo.type !== 'FADE') ? `<span class="tier-tag">🎯 ${escapeHtml(topTargetStr)}</span>` : ''}
-          </div>
+      <!-- 4. PLAYER & TEAM COLUMN -->
+      <div class="col-player">
+        <div class="row-name-line">
+          <span class="row-player-name ${isDraftedOther ? 'card-drafted-strike' : ''}">${escapeHtml(player.player_name)}</span>
+          <span class="badge-pos ${player.position}">${player.position}</span>
+        </div>
+        <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 1px;">
+          ${escapeHtml(player.team)}${byeWeek ? ` • ${byeWeek}` : ''}
         </div>
       </div>
 
-      <div class="row-right">
+      <!-- 5. ANALYST TAKES & STANCES COLUMN -->
+      <div class="col-stances">
         <div class="stance-pills-compact">
           ${stancePills.join('')}
         </div>
-
-        <label class="compare-checkbox-label" onclick="event.stopPropagation();">
-          <input type="checkbox" class="compare-checkbox" data-player="${escapeHtml(player.canonical_key)}" ${isCheckedForCompare ? 'checked' : ''}>
-          <span>VS</span>
-        </label>
+        ${authors.length > 0 ? `<span class="author-approval-tag">✍️ ${authors.join(', ')}</span>` : ''}
+        ${(topTargetStr && consensusInfo.type !== 'FADE') ? `<span class="tier-tag">🎯 ${escapeHtml(topTargetStr)}</span>` : ''}
       </div>
     `;
 
@@ -786,11 +804,6 @@ document.addEventListener('DOMContentLoaded', () => {
     row.querySelector('.btn-draft-other').addEventListener('click', (e) => {
       e.stopPropagation();
       toggleDraftForOther(player.canonical_key);
-    });
-
-    row.querySelector('.compare-checkbox').addEventListener('change', (e) => {
-      e.stopPropagation();
-      toggleCompareSelection(player.canonical_key, e.target.checked);
     });
 
     return row;
@@ -924,20 +937,6 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       byeWarningArea.style.display = 'none';
     }
-
-    // Check Roster Needs
-    let needWarningHtml = '';
-    if (posCounts.QB === 0) needWarningHtml += '🎯 Need: Quarterback (QB)<br>';
-    if (posCounts.RB < 2) needWarningHtml += `🎯 Need: ${2 - posCounts.RB} Running Back(s) (RB)<br>`;
-    if (posCounts.WR < 2) needWarningHtml += `🎯 Need: ${2 - posCounts.WR} Wide Receiver(s) (WR)<br>`;
-    if (posCounts.TE === 0) needWarningHtml += '🎯 Need: Tight End (TE)<br>';
-
-    if (needWarningHtml) {
-      needWarningArea.innerHTML = needWarningHtml;
-      needWarningArea.style.display = 'block';
-    } else {
-      needWarningArea.style.display = 'none';
-    }
   }
 
   // Sidebar Controls
@@ -955,40 +954,6 @@ document.addEventListener('DOMContentLoaded', () => {
       localStorage.setItem('fp_sidebar_collapsed', 'true');
       updateSidebarVisibility();
     });
-  }
-
-  // Toggle Compare Selection
-  function toggleCompareSelection(canonicalKey, isChecked) {
-    if (isChecked) {
-      if (selectedForCompare.size >= 3) {
-        alert('You can compare a maximum of 3 players at a time.');
-        renderPlayerBoard();
-        return;
-      }
-      selectedForCompare.add(canonicalKey);
-    } else {
-      selectedForCompare.delete(canonicalKey);
-    }
-    updateCompareFloatingBar();
-  }
-
-  function updateCompareFloatingBar() {
-    selectedCompareList.innerHTML = '';
-    if (selectedForCompare.size > 0) {
-      selectedForCompare.forEach(key => {
-        const p = groupedPlayersMap.get(key);
-        if (p) {
-          const chip = document.createElement('span');
-          chip.className = 'selected-player-chip';
-          chip.textContent = p.player_name;
-          selectedCompareList.appendChild(chip);
-        }
-      });
-      triggerCompareBtn.textContent = `Compare (${selectedForCompare.size})`;
-      compareBar.classList.add('active');
-    } else {
-      compareBar.classList.remove('active');
-    }
   }
 
   // Helper: Generate Smart AI Executive Consensus Synthesis (Ultra-Compact 1-Liner)
@@ -1166,83 +1131,38 @@ document.addEventListener('DOMContentLoaded', () => {
     playerModal.setAttribute('aria-hidden', 'false');
   }
 
-  // Head-to-Head Compare Modal Trigger
-  triggerCompareBtn.addEventListener('click', () => {
-    if (selectedForCompare.size === 0) return;
-
-    compareGridContent.innerHTML = '';
-    selectedForCompare.forEach(key => {
-      const player = groupedPlayersMap.get(key);
-      if (!player) return;
-
-      const col = document.createElement('div');
-      col.className = 'compare-col';
-
-      const allStances = new Set();
-      player.author_takes_map.forEach(auth => auth.stances.forEach(s => allStances.add(s)));
-
-      col.innerHTML = `
-        <div style="margin-bottom: 12px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
-          <div class="team-pos-row" style="margin-bottom: 4px;">
-            <span class="badge-pos ${player.position}">${escapeHtml(player.display_pos_rank || player.pos_rank)}</span>
-            <span class="team-name">${escapeHtml(player.team)}</span>
-            <span class="adp-tag">Sleeper #${player.sleeper_adp}</span>
-          </div>
-          <h3 style="font-size: 1.15rem; font-weight: 800;">${escapeHtml(player.player_name)}</h3>
-          <div class="stance-pill-row" style="margin-top: 6px;">
-            ${Array.from(allStances).map(s => `<span class="badge-stance ${s}">${s}</span>`).join('')}
-          </div>
-        </div>
-
-        <div style="display: flex; flex-direction: column; gap: 10px;">
-          ${Array.from(player.author_takes_map.values()).map(auth => `
-            <div style="background: rgba(15, 23, 42, 0.5); padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-              <div style="font-size: 0.8rem; font-weight: 700; color: #38bdf8; margin-bottom: 4px;">${escapeHtml(auth.author)}</div>
-              <ul style="padding-left: 14px; font-size: 0.75rem; color: #cbd5e1;">
-                ${auth.reasons.map(r => `<li>${escapeHtml(r)}</li>`).join('')}
-              </ul>
-              ${auth.upside_metrics.length > 0 ? `<div style="font-size: 0.75rem; color: #6ee7b7; margin-top: 4px;">📈 ${escapeHtml(auth.upside_metrics[0])}</div>` : ''}
-            </div>
-          `).join('')}
-        </div>
-      `;
-
-      compareGridContent.appendChild(col);
-    });
-
-    compareModal.classList.add('open');
-    compareModal.setAttribute('aria-hidden', 'false');
-  });
-
   // Modal Handlers & Helpers
-  modalCloseBtn.addEventListener('click', () => {
-    playerModal.classList.remove('open');
-    playerModal.setAttribute('aria-hidden', 'true');
-  });
-
-  compareModalCloseBtn.addEventListener('click', () => {
-    compareModal.classList.remove('open');
-    compareModal.setAttribute('aria-hidden', 'true');
-  });
+  if (modalCloseBtn) {
+    modalCloseBtn.addEventListener('click', () => {
+      if (playerModal) {
+        playerModal.classList.remove('open');
+        playerModal.setAttribute('aria-hidden', 'true');
+      }
+    });
+  }
 
   // Global ESC Key Listener to Close Modals
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' || e.keyCode === 27) {
-      playerModal.classList.remove('open');
-      playerModal.setAttribute('aria-hidden', 'true');
-      compareModal.classList.remove('open');
-      compareModal.setAttribute('aria-hidden', 'true');
+      if (playerModal) {
+        playerModal.classList.remove('open');
+        playerModal.setAttribute('aria-hidden', 'true');
+      }
+      if (draftSyncModal) {
+        draftSyncModal.classList.remove('open');
+        draftSyncModal.setAttribute('aria-hidden', 'true');
+      }
     }
   });
 
-  [playerModal, compareModal].forEach(modal => {
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) {
-        modal.classList.remove('open');
-        modal.setAttribute('aria-hidden', 'true');
+  if (playerModal) {
+    playerModal.addEventListener('click', (e) => {
+      if (e.target === playerModal) {
+        playerModal.classList.remove('open');
+        playerModal.setAttribute('aria-hidden', 'true');
       }
     });
-  });
+  }
 
   searchInput.addEventListener('input', (e) => {
     searchQuery = e.target.value;
@@ -1257,9 +1177,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  if (sortBySelect) {
-    sortBySelect.addEventListener('change', (e) => {
-      sortBy = e.target.value;
+  if (thRank) {
+    thRank.addEventListener('click', () => {
+      sortBy = 'pos_rank';
+      localStorage.setItem('fp_sort_by', sortBy);
+      renderPlayerBoard();
+    });
+  }
+
+  if (thAdp) {
+    thAdp.addEventListener('click', () => {
+      sortBy = 'adp';
       localStorage.setItem('fp_sort_by', sortBy);
       renderPlayerBoard();
     });
