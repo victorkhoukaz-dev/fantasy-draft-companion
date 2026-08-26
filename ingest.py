@@ -494,7 +494,8 @@ def parse_csv_rankings(raw_dir):
                         "risk_factor": "",
                         "fp_pos_rank": None if is_top200 else pos_rank,
                         "fp_overall_rank": overall_num,
-                        "is_official_ranking": True
+                        "is_official_ranking": True,
+                        "source_file": filename
                     }
                     csv_takes.append(take)
         except Exception as e:

@@ -28,15 +28,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Common Name Aliases
   const NAME_ALIASES = {
+    'rstevenson': 'rhamondrestevenson',
+    'kenwalker': 'kennethwalker',
+    'kennethwalkeriii': 'kennethwalker',
+    'jcroskeymerritt': 'jacorycroskeymerritt',
+    'croskeymerritt': 'jacorycroskeymerritt',
     'jonathonbrooks': 'jonathanbrooks',
     'lutherburdeniii': 'lutherburden',
     'marvinharrisonjr': 'marvinharrison',
     'brianrobinsonjr': 'brianrobinson',
     'gabedavis': 'gabrieldavis',
     'mitchtrubisky': 'mitchelltrubisky',
-    'kennethwalkeriii': 'kennethwalker',
     'travisetiennejr': 'travisetienne',
-    'michaelwilsonjr': 'michaelwilson'
+    'michaelwilsonjr': 'michaelwilson',
+    'jamescookiii': 'jamescook',
+    'brianthomasjr': 'brianthomas',
+    'tyronetracyjr': 'tyronetracy',
+    'michaelpittmanjr': 'michaelpittman',
+    'chrisgodwinjr': 'chrisgodwin',
+    'chrisrodriguezjr': 'chrisrodriguez',
+    'deebosamuelsr': 'deebosamuel',
+    'aaronjonessr': 'aaronjones',
+    'kylepittssr': 'kylepitts',
+    'orondegadsdenii': 'orondegadsden'
   };
 
   // DOM Elements
@@ -301,7 +315,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
 
-      if (take.fp_overall_rank && (!playerObj.fp_overall_rank || take.author === 'FantasyPoints Staff')) {
+      if (take.fp_overall_rank && (take.author === 'FantasyPoints Staff' || take.key_reason?.includes('Top-200'))) {
         playerObj.fp_overall_rank = take.fp_overall_rank;
       }
 
