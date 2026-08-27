@@ -324,7 +324,7 @@ document.addEventListener('DOMContentLoaded', () => {
         (!take.stance || take.stance === 'Bullish') && 
         (!take.key_reason || take.key_reason.startsWith('Official '));
       
-      const isFlagshipStance = ['Exodia', 'Hansen 50', 'Hansen-50', 'Dirty Thirty', 'Dirty-Thirty'].includes(take.stance);
+      const isFlagshipStance = ['Exodia', 'The Twelve', "Guru's Guys", 'Gurus Guys', 'Hansen 50', 'Hansen-50', 'Dirty Thirty', 'Dirty-Thirty'].includes(take.stance);
 
       // Only add to author_takes_map if it's a real article take OR a flagship stance!
       if (!isGenericCsvRank || isFlagshipStance) {
@@ -650,7 +650,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       return {
         type: 'BULLISH',
-        label: '📈 Consensus',
+        label: null, // Removed generic green consensus pill to reduce visual noise!
         modalTitle: '🟢 UNANIMOUS CONSENSUS',
         icon: '🟢',
         class: 'Consensus',
@@ -662,7 +662,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getSignatureStances(player) {
     const signature = [];
-    const signatureNames = ['Exodia', 'Hansen 50', 'Hansen-50', 'Dirty Thirty', 'Dirty-Thirty'];
+    const signatureNames = ['Exodia', 'The Twelve', "Guru's Guys", 'Gurus Guys', 'Hansen 50', 'Hansen-50', 'Dirty Thirty', 'Dirty-Thirty'];
     
     player.author_takes_map.forEach(auth => {
       auth.stances.forEach(s => {
@@ -673,9 +673,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Fallback: Scan text for keywords if stance wasn't explicitly extracted in JSON
-    if (signature.length === 0 && player.raw_takes) {
-      const fullText = player.raw_takes.map(t => `${t.key_reason || ''} ${t.target_round_advice || ''} ${t.tier_or_target_round || ''}`).join(' ').toLowerCase();
+    if (player.raw_takes) {
+      const fullText = player.raw_takes.map(t => `${t.key_reason || ''} ${t.target_round_advice || ''} ${t.tier_or_target_round || ''} ${t.source_file || ''}`).join(' ').toLowerCase();
       if (fullText.includes('exodia') && !signature.includes('Exodia')) signature.push('Exodia');
+      if ((fullText.includes('the twelve') || fullText.includes("'the twelve'") || fullText.includes('"the twelve"')) && !signature.includes('The Twelve')) signature.push('The Twelve');
+      if ((fullText.includes("guru's guy") || fullText.includes("guru's picks") || fullText.includes("guru's guys") || fullText.includes("hansen best picks") || fullText.includes("hansen's best picks")) && !signature.includes("Guru's Guys")) signature.push("Guru's Guys");
       if ((fullText.includes('hansen 50') || fullText.includes('hansen50')) && !signature.includes('Hansen 50')) signature.push('Hansen 50');
       if ((fullText.includes('dirty thirty') || fullText.includes('dirty 30')) && !signature.includes('Dirty Thirty')) signature.push('Dirty Thirty');
     }
@@ -706,7 +708,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const stancePills = [];
     signatureStances.forEach(sig => {
-      stancePills.push(`<span class="badge-stance ${sig.replace(/\s+/g, '-')}">${getIconForStance(sig)} ${sig}</span>`);
+      const cssClass = sig.replace(/['’\s]/g, '-');
+      stancePills.push(`<span class="badge-stance ${cssClass}">${getIconForStance(sig)} ${sig}</span>`);
     });
     if (consensusInfo.label) {
       stancePills.push(`<span class="badge-stance ${consensusInfo.class}">${consensusInfo.label}</span>`);
@@ -1235,7 +1238,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getPrimaryStance(stancesArr) {
     if (!stancesArr || stancesArr.length === 0) return 'Bullish';
-    const hierarchy = ['Exodia', 'Must-Draft', 'Hansen 50', 'Hansen-50', 'Breakout', 'Bullish', 'Sleeper', 'Dirty Thirty', 'Dirty-Thirty', 'Bearish', 'Avoid'];
+    const hierarchy = ['Exodia', 'The Twelve', "Guru's Guys", 'Gurus Guys', 'Must-Draft', 'Hansen 50', 'Hansen-50', 'Breakout', 'Bullish', 'Sleeper', 'Dirty Thirty', 'Dirty-Thirty', 'Bearish', 'Avoid'];
     for (const h of hierarchy) {
       if (stancesArr.includes(h)) return h;
     }
@@ -1246,6 +1249,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!stance) return '📌';
     const s = stance.toLowerCase();
     if (s.includes('exodia')) return '✨';
+    if (s.includes('twelve')) return '⭐';
+    if (s.includes('guru')) return '🧙‍♂️';
     if (s.includes('hansen')) return '🎯';
     if (s.includes('dirty')) return '☣️';
     if (s.includes('must')) return '🔥';

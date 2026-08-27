@@ -276,6 +276,11 @@ def ingest_pdfs(force=False, target_file=None):
         mtime = os.path.getmtime(pdf_path)
         size = os.path.getsize(pdf_path)
         
+        # Skip generic FP staff noise files
+        if is_skipped_file(filename):
+            logging.info(f"[Skipped FP Staff Noise]: {filename}")
+            continue
+
         if target_file:
             if filename.lower() == target_file.lower() or target_file.lower() in filename.lower():
                 pending_files.append((pdf_path, filename, mtime, size))
@@ -320,7 +325,9 @@ def ingest_pdfs(force=False, target_file=None):
     - position: Position must be strictly QB, RB, WR, or TE
     - team: Team abbreviation or name
     - author: Author/analyst name who wrote the piece (if unknown, use 'FantasyPoints Staff')
-    - stance: Must be strictly one of: Bullish, Bearish, Sleeper, Must-Draft, Breakout, Avoid, Exodia, Hansen 50, Dirty Thirty
+    - stance: Must be strictly one of: Bullish, Bearish, Sleeper, Must-Draft, Breakout, Avoid, Exodia, Hansen 50, Dirty Thirty, The Twelve, Guru's Guys
+      * If this is John Hansen's 'Best Picks' (Guru's Guys) guide, set stance: Guru's Guys.
+      * If this is John Hansen's 'The Twelve' section in his Draft Plan, set stance: The Twelve.
     - target_round_advice: Specific target draft round advice (e.g. 'Round 3 Target', 'Rounds 7-8', 'Mid Rounds'). DO NOT include the word 'Tier' or tier numbers.
     - key_reason: Detailed core analytical reason for the stance
     - upside_metric: Specific statistical metric, projection, or efficiency metric showing upside
@@ -330,7 +337,7 @@ def ingest_pdfs(force=False, target_file=None):
     - is_official_ranking: Set to true ONLY if this page is an official numerical rankings list/table/cheat sheet, NOT an article take.
     """
 
-    models_to_try = ["gemini-2.0-flash", "gemini-2.5-flash"]
+    models_to_try = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-3.5-flash"]
 
     for pdf_path, filename, mtime, size in pending_files:
         logging.info(f"Processing PDF: {filename}...")
@@ -388,6 +395,13 @@ def ingest_pdfs(force=False, target_file=None):
                         takes = extracted.get("takes", [])
                         for t in takes:
                             t["source_file"] = filename
+                            if "best picks" in filename.lower() and t.get("stance") not in ["The Twelve", "Exodia"]:
+                                t["stance"] = "Guru's Guys"
+                            elif "draft plan" in filename.lower():
+                                kr = str(t.get("key_reason", "")).lower()
+                                um = str(t.get("upside_metric", "")).lower()
+                                if ("the twelve" in kr or "the twelve" in um) and t.get("stance") != "Exodia":
+                                    t["stance"] = "The Twelve"
                         file_takes.extend(takes)
                     except Exception as parse_err:
                         logging.warning(f"Failed to parse JSON for pages {start_idx+1}-{end_idx}: {parse_err}")
@@ -502,6 +516,10 @@ def parse_csv_rankings(raw_dir):
             logging.warning(f"Error parsing CSV {filename}: {e}")
     return csv_takes
 
+def is_skipped_file(filename):
+    fn = filename.lower()
+    return "overvalues" in fn or ("targets" in fn and "ft staff" in fn) or "fp staff" in fn
+
 def watch_folder():
     raw_dir = os.path.join(os.path.dirname(__file__), "raw_articles")
     print(f"\n[Auto-Watcher Active] Monitoring '{raw_dir}' for new PDFs...")
@@ -515,6 +533,8 @@ def watch_folder():
 
             for pdf_path in pdf_files:
                 filename = os.path.basename(pdf_path)
+                if is_skipped_file(filename):
+                    continue
                 mtime = os.path.getmtime(pdf_path)
                 size = os.path.getsize(pdf_path)
 
