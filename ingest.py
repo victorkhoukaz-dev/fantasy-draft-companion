@@ -295,7 +295,7 @@ def ingest_pdfs(force=False, target_file=None):
 
     if not pending_files:
         logging.info("No matching PDF files to process.")
-        print("\n[✓] All targeted articles are up to date in fantasypoints_db.json!\n")
+        print("\n[+] All targeted articles are up to date in fantasypoints_db.json!\n")
         return True
 
     logging.info(f"Found {len(pending_files)} PDF file(s) to process.")
@@ -370,24 +370,33 @@ def ingest_pdfs(force=False, target_file=None):
                 response = None
                 last_err = None
                 for model_name in models_to_try:
-                    try:
-                        response = client.models.generate_content(
-                            model=model_name,
-                            contents=[
-                                types.Part.from_bytes(data=chunk_bytes, mime_type="application/pdf"),
-                                extraction_prompt
-                            ],
-                            config=types.GenerateContentConfig(
-                                response_mime_type="application/json",
-                                response_schema=ArticleExtraction,
-                                temperature=0.1
+                    for attempt in range(3):
+                        try:
+                            response = client.models.generate_content(
+                                model=model_name,
+                                contents=[
+                                    types.Part.from_bytes(data=chunk_bytes, mime_type="application/pdf"),
+                                    extraction_prompt
+                                ],
+                                config=types.GenerateContentConfig(
+                                    response_mime_type="application/json",
+                                    response_schema=ArticleExtraction,
+                                    temperature=0.1
+                                )
                             )
-                        )
-                        if response and response.text:
-                            break
-                    except Exception as err:
-                        last_err = err
-                        logging.warning(f"Model {model_name} failed on pages {start_idx+1}-{end_idx}: {err}")
+                            if response and response.text:
+                                break
+                        except Exception as err:
+                            last_err = err
+                            err_msg = str(err)
+                            if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
+                                logging.warning(f"Rate limited (429) on {model_name} (pages {start_idx+1}-{end_idx}). Backing off 6s (attempt {attempt+1}/3)...")
+                                time.sleep(6)
+                            else:
+                                logging.warning(f"Model {model_name} failed on pages {start_idx+1}-{end_idx}: {err}")
+                                break
+                    if response and response.text:
+                        break
 
                 if response and response.text:
                     try:
