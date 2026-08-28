@@ -8,7 +8,9 @@ __pycache__/
 
 # User raw PDF files (keep directory via .gitkeep)
 raw_articles/*.pdf
+raw_articles/**/*.pdf
 !raw_articles/.gitkeep
+!raw_articles/**/.gitkeep
 
 # Scratch / Temporary artifacts
 scratch/

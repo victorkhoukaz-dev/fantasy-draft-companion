@@ -163,33 +163,70 @@ def prepare_takes_for_save(takes):
 
     return applied_count, warnings
 
-def validate_existing_database():
-    db_path = os.path.join(BASE_DIR, "fantasypoints_db.json")
+def get_mode_config(mode="redraft"):
+    m = (mode or "redraft").lower().strip()
+    if m in ["underdog", "bestball", "bb"]:
+        raw_dir = os.path.join(BASE_DIR, "raw_articles", "underdog")
+        db_path = os.path.join(BASE_DIR, "underdog_db.json")
+        manifest_path = os.path.join(BASE_DIR, "underdog_manifest.json")
+        label = "Underdog Best Ball"
+        mode_key = "underdog"
+    else:
+        redraft_dir = os.path.join(BASE_DIR, "raw_articles", "redraft")
+        raw_dir = redraft_dir if os.path.exists(redraft_dir) else os.path.join(BASE_DIR, "raw_articles")
+        db_path = os.path.join(BASE_DIR, "fantasypoints_db.json")
+        manifest_path = os.path.join(BASE_DIR, "ingested_manifest.json")
+        label = "Redraft"
+        mode_key = "redraft"
+    return {
+        "mode": mode_key,
+        "raw_dir": raw_dir,
+        "db_path": db_path,
+        "manifest_path": manifest_path,
+        "label": label
+    }
+
+def validate_existing_database(mode="redraft"):
+    cfg = get_mode_config(mode)
+    db_path = cfg["db_path"]
+    if not os.path.exists(db_path):
+        logging.info(f"Database {os.path.basename(db_path)} does not exist yet for {cfg['label']} mode.")
+        return True
+
     try:
         with open(db_path, "r", encoding="utf-8") as f:
             takes = json.load(f)
         if not isinstance(takes, list):
-            raise ValueError("fantasypoints_db.json must contain a JSON array")
+            raise ValueError(f"{os.path.basename(db_path)} must contain a JSON array")
     except Exception as e:
-        logging.error(f"Could not validate fantasypoints_db.json: {e}")
+        logging.error(f"Could not validate {os.path.basename(db_path)}: {e}")
         return False
 
     applied_count, warnings = prepare_takes_for_save(takes)
     if applied_count:
         with open(db_path, "w", encoding="utf-8") as f:
             json.dump(takes, f, indent=2, ensure_ascii=False)
-        logging.info("Saved corrected values to fantasypoints_db.json.")
+        logging.info(f"Saved corrected values to {os.path.basename(db_path)}.")
 
     return not warnings
 
-def load_manifest():
-    if os.path.exists(MANIFEST_PATH):
+def load_manifest(path=None):
+    manifest_path = path or MANIFEST_PATH
+    if os.path.exists(manifest_path):
         try:
-            with open(MANIFEST_PATH, "r", encoding="utf-8") as f:
+            with open(manifest_path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             pass
     return {}
+
+def save_manifest(manifest, path=None):
+    manifest_path = path or MANIFEST_PATH
+    try:
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2)
+    except Exception as e:
+        logging.warning(f"Could not save manifest to {manifest_path}: {e}")
 
 import re
 
@@ -244,7 +281,13 @@ def extract_cheat_sheet_pdf(pdf_path):
     logging.info(f"Extracted {len(extracted_takes)} exact positional ranks from cheat sheet {filename}")
     return extracted_takes
 
-def ingest_pdfs(force=False, target_file=None):
+def ingest_pdfs(force=False, target_file=None, mode="redraft"):
+    cfg = get_mode_config(mode)
+    raw_dir = cfg["raw_dir"]
+    db_path = cfg["db_path"]
+    manifest_path = cfg["manifest_path"]
+    mode_label = cfg["label"]
+
     api_key = get_api_key()
     if not api_key:
         logging.error("GEMINI_API_KEY is missing or set to placeholder in .env file.")
@@ -259,15 +302,26 @@ def ingest_pdfs(force=False, target_file=None):
         return False
 
     client = genai.Client(api_key=api_key)
-    raw_dir = os.path.join(os.path.dirname(__file__), "raw_articles")
-    pdf_files = glob.glob(os.path.join(raw_dir, "*.pdf"))
+
+    # Gather PDF files for target mode (with fallback for redraft)
+    pdf_paths_set = set()
+    if cfg["mode"] == "redraft":
+        for p in glob.glob(os.path.join(BASE_DIR, "raw_articles", "redraft", "*.pdf")):
+            pdf_paths_set.add(p)
+        for p in glob.glob(os.path.join(BASE_DIR, "raw_articles", "*.pdf")):
+            pdf_paths_set.add(p)
+    else:
+        for p in glob.glob(os.path.join(raw_dir, "*.pdf")):
+            pdf_paths_set.add(p)
+
+    pdf_files = sorted(list(pdf_paths_set))
 
     if not pdf_files:
-        logging.warning("No PDF files found in raw_articles/")
-        print("No PDF files found in raw_articles/")
+        logging.warning(f"No PDF files found for {mode_label} in {raw_dir}")
+        print(f"No PDF files found for {mode_label} in {raw_dir}")
         return False
 
-    manifest = load_manifest()
+    manifest = load_manifest(manifest_path)
     
     # Filter for target or new/modified PDF files
     pending_files = []
@@ -294,14 +348,13 @@ def ingest_pdfs(force=False, target_file=None):
         pending_files.append((pdf_path, filename, mtime, size))
 
     if not pending_files:
-        logging.info("No matching PDF files to process.")
-        print("\n[+] All targeted articles are up to date in fantasypoints_db.json!\n")
+        logging.info(f"No matching PDF files to process for {mode_label}.")
+        print(f"\n[+] All targeted articles are up to date in {os.path.basename(db_path)}!\n")
         return True
 
-    logging.info(f"Found {len(pending_files)} PDF file(s) to process.")
+    logging.info(f"[{mode_label}] Found {len(pending_files)} PDF file(s) to process.")
 
     all_takes = []
-    db_path = os.path.join(os.path.dirname(__file__), "fantasypoints_db.json")
 
     # If target_file or force is specified, purge old takes for pending files to prevent stale duplicates
     pending_filenames = {fn for _, fn, _, _ in pending_files}
@@ -312,9 +365,9 @@ def ingest_pdfs(force=False, target_file=None):
                 existing_data = json.load(f)
                 if isinstance(existing_data, list):
                     all_takes = [t for t in existing_data if t.get("source_file") not in pending_filenames]
-                    logging.info(f"Loaded {len(all_takes)} existing takes from fantasypoints_db.json (purged old takes for updated files)")
+                    logging.info(f"Loaded {len(all_takes)} existing takes from {os.path.basename(db_path)} (purged old takes for updated files)")
         except Exception as e:
-            logging.warning(f"Could not parse existing fantasypoints_db.json: {e}")
+            logging.warning(f"Could not parse existing {os.path.basename(db_path)}: {e}")
 
     extraction_prompt = """
     You are an expert Fantasy Football research analyst examining pages of a FantasyPoints draft guide/article.
@@ -429,7 +482,7 @@ def ingest_pdfs(force=False, target_file=None):
                 "take_count": len(file_takes),
                 "ingested_at": time.strftime("%Y-%m-%d %H:%M:%S")
             }
-            save_manifest(manifest)
+            save_manifest(manifest, manifest_path)
 
         except Exception as e:
             logging.error(f"Error reading {filename}: {e}")
@@ -458,8 +511,8 @@ def ingest_pdfs(force=False, target_file=None):
     with open(db_path, "w", encoding="utf-8") as f:
         json.dump(unique_takes, f, indent=2, ensure_ascii=False)
 
-    logging.info(f"Successfully saved fantasypoints_db.json with {len(unique_takes)} total player takes.")
-    print(f"\n[+] Success! Ingestion complete. Database updated: {len(unique_takes)} total player takes.\n")
+    logging.info(f"Successfully saved {os.path.basename(db_path)} with {len(unique_takes)} total player takes.")
+    print(f"\n[+] Success! [{mode_label}] Ingestion complete. Database updated ({os.path.basename(db_path)}): {len(unique_takes)} total player takes.\n")
     return True
 
 def parse_csv_rankings(raw_dir):
@@ -529,15 +582,29 @@ def is_skipped_file(filename):
     fn = filename.lower()
     return "overvalues" in fn or ("targets" in fn and "ft staff" in fn) or "fp staff" in fn
 
-def watch_folder():
-    raw_dir = os.path.join(os.path.dirname(__file__), "raw_articles")
-    print(f"\n[Auto-Watcher Active] Monitoring '{raw_dir}' for new PDFs...")
-    print("Simply drop any FantasyPoints PDF into raw_articles/. New files auto-ingest instantly!\n")
+def watch_folder(mode="redraft"):
+    cfg = get_mode_config(mode)
+    raw_dir = cfg["raw_dir"]
+    manifest_path = cfg["manifest_path"]
+    mode_label = cfg["label"]
+
+    print(f"\n[Auto-Watcher Active: {mode_label}] Monitoring '{raw_dir}' for new PDFs...")
+    print(f"Simply drop any FantasyPoints PDF into {raw_dir}/. New files auto-ingest instantly!\n")
     
     while True:
         try:
-            pdf_files = glob.glob(os.path.join(raw_dir, "*.pdf"))
-            manifest = load_manifest()
+            pdf_paths_set = set()
+            if cfg["mode"] == "redraft":
+                for p in glob.glob(os.path.join(BASE_DIR, "raw_articles", "redraft", "*.pdf")):
+                    pdf_paths_set.add(p)
+                for p in glob.glob(os.path.join(BASE_DIR, "raw_articles", "*.pdf")):
+                    pdf_paths_set.add(p)
+            else:
+                for p in glob.glob(os.path.join(raw_dir, "*.pdf")):
+                    pdf_paths_set.add(p)
+
+            pdf_files = sorted(list(pdf_paths_set))
+            manifest = load_manifest(manifest_path)
             has_new = False
 
             for pdf_path in pdf_files:
@@ -552,8 +619,8 @@ def watch_folder():
                     break
 
             if has_new:
-                logging.info("Detected new or updated PDF file(s). Triggering auto-ingestion...")
-                ingest_pdfs()
+                logging.info(f"[{mode_label}] Detected new or updated PDF file(s). Triggering auto-ingestion...")
+                ingest_pdfs(mode=mode)
 
         except KeyboardInterrupt:
             print("\n[!] Watcher stopped by user.")
@@ -564,13 +631,24 @@ def watch_folder():
         time.sleep(3)
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] in ["--watch", "-w", "watch"]:
-        watch_folder()
-    elif len(sys.argv) > 1 and sys.argv[1] in ["--validate", "validate"]:
-        validate_existing_database()
-    elif len(sys.argv) > 1 and sys.argv[1] in ["--force", "-f"]:
-        ingest_pdfs(force=True)
-    elif len(sys.argv) > 2 and sys.argv[1] in ["--file", "-file"]:
-        ingest_pdfs(target_file=sys.argv[2])
+    import argparse
+    parser = argparse.ArgumentParser(description="FantasyPoints Article Ingestion Pipeline")
+    parser.add_argument("--mode", "-m", choices=["redraft", "underdog", "bestball", "bb"], default="redraft", help="Draft mode target (default: redraft)")
+    parser.add_argument("--watch", "-w", action="store_true", help="Monitor folder and auto-ingest new PDFs")
+    parser.add_argument("--validate", action="store_true", help="Validate existing database without calling Gemini API")
+    parser.add_argument("--force", "-f", action="store_true", help="Force re-ingestion of all PDFs")
+    parser.add_argument("--file", type=str, default=None, help="Target specific PDF filename to ingest")
+
+    args = parser.parse_args()
+    target_mode = "underdog" if args.mode in ["underdog", "bestball", "bb"] else "redraft"
+
+    if args.watch:
+        watch_folder(mode=target_mode)
+    elif args.validate:
+        validate_existing_database(mode=target_mode)
+    elif args.force:
+        ingest_pdfs(force=True, mode=target_mode)
+    elif args.file:
+        ingest_pdfs(target_file=args.file, mode=target_mode)
     else:
-        ingest_pdfs()
+        ingest_pdfs(mode=target_mode)
