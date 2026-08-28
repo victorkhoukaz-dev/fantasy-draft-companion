@@ -121,6 +121,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // AI Settings Modal DOM Elements
   const aiSettingsModal = document.getElementById('aiSettingsModal');
   const aiSettingsCloseBtn = document.getElementById('aiSettingsCloseBtn');
+  const aiProviderSelect = document.getElementById('aiProviderSelect');
+  const groqKeyGroup = document.getElementById('groqKeyGroup');
+  const geminiKeyGroup = document.getElementById('geminiKeyGroup');
+  const groqApiKeyInput = document.getElementById('groqApiKeyInput');
   const geminiApiKeyInput = document.getElementById('geminiApiKeyInput');
   const aiModelSelect = document.getElementById('aiModelSelect');
   const aiStrategyModeSelect = document.getElementById('aiStrategyModeSelect');
@@ -129,8 +133,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const aiSettingsStatusMsg = document.getElementById('aiSettingsStatusMsg');
 
   // AI Advisor State
+  let aiProvider = localStorage.getItem('fp_ai_provider') || 'groq';
+  let groqApiKey = localStorage.getItem('fp_groq_api_key') || '';
   let geminiApiKey = localStorage.getItem('fp_gemini_api_key') || '';
-  let aiModel = localStorage.getItem('fp_ai_model') || 'gemini-2.5-flash';
+  let aiModel = localStorage.getItem('fp_ai_model') || (aiProvider === 'groq' ? 'llama-3.3-70b-versatile' : 'gemini-2.5-flash');
   let aiStrategyMode = localStorage.getItem('fp_ai_strategy') || 'balanced';
   let isAiAutoTrigger = localStorage.getItem('fp_ai_auto_trigger') !== 'false';
   let isAiAdvisorVisible = localStorage.getItem('fp_ai_advisor_visible') !== 'false';
@@ -138,6 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentAiAdvice = null;
   let isAiGenerating = false;
   let lastEvaluatedTurnKey = '';
+  let passedSuggestionsSet = new Set();
 
   // Draft Sync State
   let activeDraftId = localStorage.getItem('fp_draft_id') || null;
@@ -871,6 +878,7 @@ document.addEventListener('DOMContentLoaded', () => {
       myRosterPlayers.add(canonicalKey);
       otherDraftedPlayers.delete(canonicalKey);
     }
+    passedSuggestionsSet.clear();
     saveDraftStates();
     renderPlayerBoard();
   }
@@ -883,6 +891,7 @@ document.addEventListener('DOMContentLoaded', () => {
       otherDraftedPlayers.add(canonicalKey);
       myRosterPlayers.delete(canonicalKey);
     }
+    passedSuggestionsSet.clear();
     saveDraftStates();
     renderPlayerBoard();
   }
@@ -1644,6 +1653,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const pickInRound = (currentPickNo - 1) % teams + 1;
 
     if (!userSlot || userSlot < 1 || userSlot > teams) {
+      // Default assumed next turn in snake draft (e.g. assume slot 1 turn at pick 24 for round 1)
+      const assumedNextPick = currentPickNo <= teams ? (teams * 2) : (currentPickNo + teams);
       return {
         hasSlot: false,
         currentPickNo,
@@ -1656,9 +1667,9 @@ document.addEventListener('DOMContentLoaded', () => {
         picksAway: null,
         currentUserPick: null,
         currentUserRound: null,
-        nextUserPick: null,
-        nextUserRound: null,
-        interveningPicks: 0
+        nextUserPick: assumedNextPick,
+        nextUserRound: Math.ceil(assumedNextPick / teams),
+        interveningPicks: (assumedNextPick - currentPickNo)
       };
     }
 
@@ -1705,10 +1716,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Logistic Survival Probability Model (P(Player survives until targetPick))
   function calculateSurvivalProbability(playerAdp, targetPick) {
     if (!playerAdp || playerAdp >= 300) return 0.99;
-    if (!targetPick) return 0.50;
+    const pickTarget = targetPick || 24;
 
     const sigma = Math.max(3.2, playerAdp * 0.14);
-    const z = (targetPick - playerAdp) / sigma;
+    const z = (pickTarget - playerAdp) / sigma;
     const probDrafted = 1 / (1 + Math.exp(-1.65 * z));
     const survivalProb = Math.max(0.01, Math.min(0.99, 1 - probDrafted));
     return survivalProb;
@@ -1837,7 +1848,11 @@ document.addEventListener('DOMContentLoaded', () => {
       };
     }
 
-    const scored = availableCandidates.map(p => {
+    // Filter out passed suggestions unless everything has been passed
+    let candidatePool = availableCandidates.filter(p => !passedSuggestionsSet.has(p.canonical_key));
+    if (candidatePool.length === 0) candidatePool = availableCandidates;
+
+    const scored = candidatePool.map(p => {
       const evalResult = evaluateCandidateScore(p, turnsInfo, rosterNeeds, aiStrategyMode);
       return { player: p, ...evalResult };
     });
@@ -1886,7 +1901,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } else {
       const dist = turnsInfo.picksAway ? `${turnsInfo.picksAway} picks away (Pick #${turnsInfo.currentUserPick})` : `Round ${turnsInfo.currentRound}`;
-      rationale = `🎯 <strong>PLANNING (${dist}):</strong> Top projected board target is <strong>${escapeHtml(p.player_name)}</strong> (${p.position} - ADP ${p.sleeper_adp || '—'}). `;
+      rationale = `🎯 <strong>PLANNING (${dist}):</strong> Top projected board target is <strong>${escapeHtml(p.player_name)}</strong> (${p.position} - ADP ${p.sleeper_adp ? p.sleeper_adp.toFixed(1) : '—'}). `;
       if (lookaheadList.length > 0) {
         const safeNames = lookaheadList.map(l => l.player.player_name).join(', ');
         rationale += `Safe to let fall for later turns: <em>${escapeHtml(safeNames)}</em>.`;
@@ -1900,6 +1915,101 @@ document.addEventListener('DOMContentLoaded', () => {
       lookaheadList,
       cliffList
     };
+  }
+
+  // Groq LLM Ultra-Fast Strategic Reasoning Integration
+  async function queryGroqStrategist(turnsInfo, rosterNeeds, topCandidates, heuristicAdvice) {
+    if (!groqApiKey) {
+      return {
+        ...heuristicAdvice,
+        isAiGenerated: false,
+        aiNotice: '💡 Add your Groq API Key in ⚙️ Settings for ultra-fast (~300ms) live AI reasoning.'
+      };
+    }
+
+    isAiGenerating = true;
+    updateAiAdvisorHudGenerating(true);
+
+    const candidatesPayload = topCandidates.slice(0, 8).map(c => {
+      const p = c.player;
+      const takesSummary = (p.raw_takes || []).slice(0, 2).map(t => `[${t.author || 'Analyst'}]: ${t.key_reason || t.stance || ''}`).join(' | ');
+      return {
+        name: p.player_name,
+        pos: p.position,
+        team: p.team,
+        adp: p.sleeper_adp,
+        survival_to_next_pick_pct: Math.round(c.survivalToNext * 100),
+        is_cliff_risk: c.isCliffRisk,
+        stances: c.signatureStances,
+        expert_database_takes: takesSummary.slice(0, 180)
+      };
+    });
+
+    const promptPayload = {
+      system_role: "You are the FantasyPoints AI Chief Draft Strategist. You provide decisive, high-IQ draft recommendations grounded strictly in Scott Barrett and John Hansen analytics and the provided FantasyPoints database. Do NOT hallucinate generic web takes or make assumptions outside the provided expert quotes.",
+      user_draft_strategy_rules: "Strict anti-early-QB policy in Rounds 1-3. Deprioritize early TEs in Rounds 1-3 except elite targets Brock Bowers and Trey McBride.",
+      draft_state: {
+        current_pick: turnsInfo.currentPickNo,
+        current_round: turnsInfo.currentRound,
+        user_slot: turnsInfo.userSlot,
+        is_on_the_clock: turnsInfo.isOnTheClock,
+        picks_until_turn: turnsInfo.picksAway,
+        next_turn_pick_number: turnsInfo.nextUserPick,
+        intervening_picks_between_turns: turnsInfo.interveningPicks,
+        current_roster_counts: rosterNeeds.counts,
+        strategy_mode: aiStrategyMode
+      },
+      top_available_players: candidatesPayload,
+      task: "Give a 2 to 3 sentence tactical draft recommendation. Specify: 1) Who to pick and why (citing specific Scott Barrett or John Hansen takes from the database), 2) What to do at the next pick based on survival odds, and 3) One backup pivot."
+    };
+
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${groqApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: aiModel || 'llama-3.3-70b-versatile',
+          messages: [
+            { role: 'system', content: promptPayload.system_role + ' ' + promptPayload.user_draft_strategy_rules },
+            { role: 'user', content: JSON.stringify(promptPayload) }
+          ],
+          temperature: 0.3,
+          max_tokens: 350
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error?.message || `HTTP ${response.status}`);
+      }
+
+      const resData = await response.json();
+      const generatedText = resData.choices?.[0]?.message?.content;
+
+      if (generatedText) {
+        return {
+          ...heuristicAdvice,
+          rationale: generatedText.trim(),
+          isAiGenerated: true,
+          aiModelUsed: `Groq (${aiModel || 'llama-3.3-70b'})`
+        };
+      } else {
+        throw new Error('Empty Groq response');
+      }
+    } catch (err) {
+      console.warn('Groq AI Advisor query failed, falling back to heuristic engine:', err);
+      return {
+        ...heuristicAdvice,
+        isAiGenerated: false,
+        aiNotice: `⚠️ Groq call error (${err.message}). Showing heuristic analytics.`
+      };
+    } finally {
+      isAiGenerating = false;
+      updateAiAdvisorHudGenerating(false);
+    }
   }
 
   // Gemini LLM Strategic Reasoning Integration
@@ -1978,7 +2088,7 @@ document.addEventListener('DOMContentLoaded', () => {
           ...heuristicAdvice,
           rationale: generatedText.trim(),
           isAiGenerated: true,
-          aiModelUsed: aiModel
+          aiModelUsed: `Gemini (${aiModel || 'gemini-2.5-flash'})`
         };
       } else {
         throw new Error('Empty AI response');
@@ -1993,6 +2103,15 @@ document.addEventListener('DOMContentLoaded', () => {
     } finally {
       isAiGenerating = false;
       updateAiAdvisorHudGenerating(false);
+    }
+  }
+
+  // Unified Dispatcher for AI Strategist Query
+  async function queryAiStrategist(turnsInfo, rosterNeeds, topCandidates, heuristicAdvice) {
+    if (aiProvider === 'groq') {
+      return queryGroqStrategist(turnsInfo, rosterNeeds, topCandidates, heuristicAdvice);
+    } else {
+      return queryGeminiStrategist(turnsInfo, rosterNeeds, topCandidates, heuristicAdvice);
     }
   }
 
@@ -2050,7 +2169,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Update Next Turn Distance Chip
     if (aiNextTurnDistance && aiNextTurnText) {
       if (turnsInfo.nextUserPick) {
-        aiNextTurnText.textContent = `#${turnsInfo.nextUserPick} (${turnsInfo.interveningPicks} picks away)`;
+        const slotNote = turnsInfo.hasSlot ? '' : ' (Projected Turn)';
+        aiNextTurnText.textContent = `#${turnsInfo.nextUserPick} (${turnsInfo.interveningPicks} picks away)${slotNote}`;
         aiNextTurnDistance.style.display = 'inline-block';
       } else {
         aiNextTurnDistance.style.display = 'none';
@@ -2102,13 +2222,13 @@ document.addEventListener('DOMContentLoaded', () => {
           </span>
         </div>
       `;
-    }).join('') || '<div style="font-size: 0.75rem; color: var(--text-muted);">No safe targets projected</div>';
+    }).join('') || '<div style="font-size: 0.75rem; color: var(--text-muted);">No safe targets projected for next turn</div>';
 
     const contingencyHtml = advice.contingency ? `
       <div class="ai-contingency-box">
         <strong>Pivot / Backup:</strong> ${escapeHtml(advice.contingency.player.player_name)} 
         <span class="badge-pos ${advice.contingency.player.position}" style="font-size: 0.65rem; padding: 1px 4px;">${advice.contingency.player.position}</span>
-        (ADP ${advice.contingency.player.sleeper_adp || '—'})
+        (ADP ${advice.contingency.player.sleeper_adp ? advice.contingency.player.sleeper_adp.toFixed(1) : '—'})
       </div>
     ` : '';
 
@@ -2118,9 +2238,15 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
     ` : (advice.isAiGenerated ? `
       <div style="font-size: 0.72rem; color: #a855f7; margin-top: 6px; font-weight: 700;">
-        ✨ Deep Analysis via ${advice.aiModelUsed || 'Gemini'}
+        ✨ Deep Analysis via ${advice.aiModelUsed || 'AI Engine'}
       </div>
     ` : '');
+
+    const resetPassesBtnHtml = passedSuggestionsSet.size > 0 ? `
+      <button id="btnAiResetPasses" class="btn-ai-reset-passes">
+        ↺ Reset ${passedSuggestionsSet.size} passed player${passedSuggestionsSet.size > 1 ? 's' : ''}
+      </button>
+    ` : '';
 
     if (aiHudBody) {
       aiHudBody.innerHTML = `
@@ -2148,9 +2274,15 @@ document.addEventListener('DOMContentLoaded', () => {
               </div>
             </div>
             <div style="margin-top: 8px;">
-              <button class="btn-draft-me" style="width: 100%; padding: 6px 10px; font-size: 0.8rem; font-weight: 800;" data-player="${escapeHtml(p.canonical_key)}" onclick="event.stopPropagation();">
-                🏈 Draft for MY Team
-              </button>
+              <div class="ai-primary-actions-row">
+                <button class="btn-draft-me" style="flex: 1; padding: 6px 10px; font-size: 0.8rem; font-weight: 800;" data-player="${escapeHtml(p.canonical_key)}" onclick="event.stopPropagation();">
+                  🏈 Draft for MY Team
+                </button>
+                <button class="btn-ai-pass" data-player="${escapeHtml(p.canonical_key)}" onclick="event.stopPropagation();" title="Pass on this suggestion and view the next best pick">
+                  🚫 Pass
+                </button>
+              </div>
+              ${resetPassesBtnHtml}
             </div>
           </div>
 
@@ -2185,6 +2317,24 @@ document.addEventListener('DOMContentLoaded', () => {
           toggleDraftForMe(p.canonical_key);
         });
       }
+
+      const passBtn = aiHudBody.querySelector('.btn-ai-pass');
+      if (passBtn) {
+        passBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          passedSuggestionsSet.add(p.canonical_key);
+          updateAiDraftAdvisor(false);
+        });
+      }
+
+      const resetPassesBtn = aiHudBody.querySelector('#btnAiResetPasses');
+      if (resetPassesBtn) {
+        resetPassesBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          passedSuggestionsSet.clear();
+          updateAiDraftAdvisor(false);
+        });
+      }
     }
   }
 
@@ -2212,19 +2362,59 @@ document.addEventListener('DOMContentLoaded', () => {
     currentAiAdvice = heuristicAdvice;
     renderAiAdvisorHudUI(turnsInfo, heuristicAdvice);
 
-    const turnKey = `${currentPickNo}_${myDraftSlot}_${turnsInfo.isOnTheClock}`;
-    const shouldAutoDeepReason = (isAiAutoTrigger && turnsInfo.isOnTheClock && turnKey !== lastEvaluatedTurnKey && geminiApiKey);
+    const hasKey = (aiProvider === 'groq' && groqApiKey) || (aiProvider === 'gemini' && geminiApiKey);
+    const turnKey = `${currentPickNo}_${myDraftSlot}_${turnsInfo.isOnTheClock}_${aiProvider}_${Array.from(passedSuggestionsSet).join(',')}`;
+    const shouldAutoDeepReason = (isAiAutoTrigger && turnsInfo.isOnTheClock && turnKey !== lastEvaluatedTurnKey && hasKey);
 
     if (forceDeepReason || shouldAutoDeepReason) {
       lastEvaluatedTurnKey = turnKey;
-      const scoredCandidates = available.map(p => ({
+      let candidatePool = available.filter(p => !passedSuggestionsSet.has(p.canonical_key));
+      if (candidatePool.length === 0) candidatePool = available;
+
+      const scoredCandidates = candidatePool.map(p => ({
         player: p,
         ...evaluateCandidateScore(p, turnsInfo, rosterNeeds, aiStrategyMode)
       })).sort((a, b) => b.score - a.score);
 
-      const aiAdvice = await queryGeminiStrategist(turnsInfo, rosterNeeds, scoredCandidates, heuristicAdvice);
+      const aiAdvice = await queryAiStrategist(turnsInfo, rosterNeeds, scoredCandidates, heuristicAdvice);
       currentAiAdvice = aiAdvice;
       renderAiAdvisorHudUI(turnsInfo, aiAdvice);
+    }
+  }
+
+  function syncProviderModelOptions() {
+    if (!aiModelSelect) return;
+    aiModelSelect.innerHTML = '';
+    if (aiProvider === 'groq') {
+      if (groqKeyGroup) groqKeyGroup.style.display = 'block';
+      if (geminiKeyGroup) geminiKeyGroup.style.display = 'none';
+      const groqModels = [
+        { val: 'llama-3.3-70b-versatile', label: 'llama-3.3-70b-versatile (Recommended - High IQ & ~300ms)' },
+        { val: 'llama-3.1-8b-instant', label: 'llama-3.1-8b-instant (Fastest ~150ms)' },
+        { val: 'llama-3.1-70b-versatile', label: 'llama-3.1-70b-versatile' }
+      ];
+      groqModels.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.val;
+        opt.textContent = m.label;
+        if (aiModel === m.val || (!aiModel && m.val === 'llama-3.3-70b-versatile')) opt.selected = true;
+        aiModelSelect.appendChild(opt);
+      });
+    } else {
+      if (groqKeyGroup) groqKeyGroup.style.display = 'none';
+      if (geminiKeyGroup) geminiKeyGroup.style.display = 'block';
+      const geminiModels = [
+        { val: 'gemini-2.5-flash', label: 'gemini-2.5-flash (Fastest & Recommended)' },
+        { val: 'gemini-2.0-flash', label: 'gemini-2.0-flash' },
+        { val: 'gemini-1.5-flash', label: 'gemini-1.5-flash' }
+      ];
+      geminiModels.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.val;
+        opt.textContent = m.label;
+        if (aiModel === m.val || (!aiModel && m.val === 'gemini-2.5-flash')) opt.selected = true;
+        aiModelSelect.appendChild(opt);
+      });
     }
   }
 
@@ -2268,11 +2458,22 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
+    if (aiProviderSelect) {
+      aiProviderSelect.value = aiProvider;
+      aiProviderSelect.addEventListener('change', (e) => {
+        aiProvider = e.target.value;
+        aiModel = (aiProvider === 'groq') ? 'llama-3.3-70b-versatile' : 'gemini-2.5-flash';
+        syncProviderModelOptions();
+      });
+    }
+
     // AI Settings Modal
     if (openAiSettingsBtn && aiSettingsModal) {
       openAiSettingsBtn.addEventListener('click', () => {
+        if (aiProviderSelect) aiProviderSelect.value = aiProvider;
+        if (groqApiKeyInput) groqApiKeyInput.value = groqApiKey;
         if (geminiApiKeyInput) geminiApiKeyInput.value = geminiApiKey;
-        if (aiModelSelect) aiModelSelect.value = aiModel;
+        syncProviderModelOptions();
         if (aiStrategyModeSelect) aiStrategyModeSelect.value = aiStrategyMode;
         if (aiAutoTriggerCheck) aiAutoTriggerCheck.checked = isAiAutoTrigger;
         if (aiSettingsStatusMsg) aiSettingsStatusMsg.textContent = '';
@@ -2290,6 +2491,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (saveAiSettingsBtn) {
       saveAiSettingsBtn.addEventListener('click', () => {
+        if (aiProviderSelect) {
+          aiProvider = aiProviderSelect.value;
+          localStorage.setItem('fp_ai_provider', aiProvider);
+        }
+        if (groqApiKeyInput) {
+          groqApiKey = groqApiKeyInput.value.trim();
+          localStorage.setItem('fp_groq_api_key', groqApiKey);
+        }
         if (geminiApiKeyInput) {
           geminiApiKey = geminiApiKeyInput.value.trim();
           localStorage.setItem('fp_gemini_api_key', geminiApiKey);
@@ -2322,6 +2531,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  syncProviderModelOptions();
   initAiAdvisorControls();
 
   // Auto-Resume Active Draft Connection on page load

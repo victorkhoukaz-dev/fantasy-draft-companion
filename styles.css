@@ -1515,3 +1515,49 @@ select option {
   gap: 4px;
 }
 
+/* AI Pass & Action Buttons */
+.ai-primary-actions-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.btn-ai-pass {
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  color: #fda4af;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-ai-pass:hover {
+  background: rgba(244, 63, 94, 0.25);
+  border-color: #f43f5e;
+  color: #ffffff;
+}
+
+.btn-ai-reset-passes {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+  margin-top: 4px;
+  display: inline-block;
+}
+
+.btn-ai-reset-passes:hover {
+  color: #38bdf8;
+}
+
+
