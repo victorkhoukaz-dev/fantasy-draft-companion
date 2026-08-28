@@ -103,6 +103,42 @@ document.addEventListener('DOMContentLoaded', () => {
   const disconnectDraftBtn = document.getElementById('disconnectDraftBtn');
   const draftSyncStatusMsg = document.getElementById('draftSyncStatusMsg');
 
+  // AI Advisor DOM Elements
+  const toggleAiAdvisorBtn = document.getElementById('toggleAiAdvisorBtn');
+  const openAiSettingsBtn = document.getElementById('openAiSettingsBtn');
+  const aiAdvisorHud = document.getElementById('aiAdvisorHud');
+  const aiTurnBadge = document.getElementById('aiTurnBadge');
+  const aiTurnIcon = document.getElementById('aiTurnIcon');
+  const aiTurnText = document.getElementById('aiTurnText');
+  const aiNextTurnDistance = document.getElementById('aiNextTurnDistance');
+  const aiNextTurnText = document.getElementById('aiNextTurnText');
+  const aiDeepReasonBtn = document.getElementById('aiDeepReasonBtn');
+  const aiRefreshBtn = document.getElementById('aiRefreshBtn');
+  const aiMinimizeBtn = document.getElementById('aiMinimizeBtn');
+  const aiMinimizeIcon = document.getElementById('aiMinimizeIcon');
+  const aiHudBody = document.getElementById('aiHudBody');
+
+  // AI Settings Modal DOM Elements
+  const aiSettingsModal = document.getElementById('aiSettingsModal');
+  const aiSettingsCloseBtn = document.getElementById('aiSettingsCloseBtn');
+  const geminiApiKeyInput = document.getElementById('geminiApiKeyInput');
+  const aiModelSelect = document.getElementById('aiModelSelect');
+  const aiStrategyModeSelect = document.getElementById('aiStrategyModeSelect');
+  const aiAutoTriggerCheck = document.getElementById('aiAutoTriggerCheck');
+  const saveAiSettingsBtn = document.getElementById('saveAiSettingsBtn');
+  const aiSettingsStatusMsg = document.getElementById('aiSettingsStatusMsg');
+
+  // AI Advisor State
+  let geminiApiKey = localStorage.getItem('fp_gemini_api_key') || '';
+  let aiModel = localStorage.getItem('fp_ai_model') || 'gemini-2.5-flash';
+  let aiStrategyMode = localStorage.getItem('fp_ai_strategy') || 'balanced';
+  let isAiAutoTrigger = localStorage.getItem('fp_ai_auto_trigger') !== 'false';
+  let isAiAdvisorVisible = localStorage.getItem('fp_ai_advisor_visible') !== 'false';
+  let isAiHudCollapsed = localStorage.getItem('fp_ai_hud_collapsed') === 'true';
+  let currentAiAdvice = null;
+  let isAiGenerating = false;
+  let lastEvaluatedTurnKey = '';
+
   // Draft Sync State
   let activeDraftId = localStorage.getItem('fp_draft_id') || null;
   let myDraftSlot = parseInt(localStorage.getItem('fp_draft_slot'), 10) || null;
@@ -504,6 +540,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     renderRosterSidebarContent();
     updateHeaderCounts();
+    updateAiDraftAdvisor();
 
     if (visibleCount === 0) {
       emptyState.style.display = 'block';
@@ -1595,6 +1632,667 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // ==========================================================================
+  // 🧠 AI LIVE DRAFT ADVISOR & LOOKAHEAD ENGINE
+  // ==========================================================================
+
+  // Snake Draft Turn & Distance Calculator
+  function calculateDraftTurns(currentPickNo, totalTeams, userSlot, totalRounds = 16) {
+    const teams = totalTeams || 12;
+    const currentRound = Math.ceil(currentPickNo / teams);
+    const pickInRound = (currentPickNo - 1) % teams + 1;
+
+    if (!userSlot || userSlot < 1 || userSlot > teams) {
+      return {
+        hasSlot: false,
+        currentPickNo,
+        currentRound,
+        pickInRound,
+        totalTeams: teams,
+        userSlot: null,
+        isOnTheClock: false,
+        isOnDeck: false,
+        picksAway: null,
+        currentUserPick: null,
+        currentUserRound: null,
+        nextUserPick: null,
+        nextUserRound: null,
+        interveningPicks: 0
+      };
+    }
+
+    // Generate user's overall picks in snake format
+    const userPicks = [];
+    for (let r = 1; r <= totalRounds; r++) {
+      let pickNum;
+      if (r % 2 === 1) { // Odd round: slot 1 -> T
+        pickNum = (r - 1) * teams + userSlot;
+      } else { // Even round: slot T -> 1 (snake back)
+        pickNum = r * teams - userSlot + 1;
+      }
+      userPicks.push({ round: r, pickNo: pickNum });
+    }
+
+    // Find upcoming user picks >= currentPickNo
+    const upcoming = userPicks.filter(p => p.pickNo >= currentPickNo);
+    const nextUp = upcoming.length > 0 ? upcoming[0] : null;
+    const subsequent = upcoming.length > 1 ? upcoming[1] : null;
+
+    const picksAway = nextUp ? (nextUp.pickNo - currentPickNo) : null;
+    const isOnTheClock = (picksAway === 0);
+    const isOnDeck = (picksAway !== null && picksAway > 0 && picksAway <= 2);
+    const interveningPicks = (nextUp && subsequent) ? (subsequent.pickNo - nextUp.pickNo) : (teams * 2 - 2);
+
+    return {
+      hasSlot: true,
+      currentPickNo,
+      currentRound,
+      pickInRound,
+      totalTeams: teams,
+      userSlot,
+      isOnTheClock,
+      isOnDeck,
+      picksAway,
+      currentUserPick: nextUp ? nextUp.pickNo : null,
+      currentUserRound: nextUp ? nextUp.round : null,
+      nextUserPick: subsequent ? subsequent.pickNo : null,
+      nextUserRound: subsequent ? subsequent.round : null,
+      interveningPicks
+    };
+  }
+
+  // Logistic Survival Probability Model (P(Player survives until targetPick))
+  function calculateSurvivalProbability(playerAdp, targetPick) {
+    if (!playerAdp || playerAdp >= 300) return 0.99;
+    if (!targetPick) return 0.50;
+
+    const sigma = Math.max(3.2, playerAdp * 0.14);
+    const z = (targetPick - playerAdp) / sigma;
+    const probDrafted = 1 / (1 + Math.exp(-1.65 * z));
+    const survivalProb = Math.max(0.01, Math.min(0.99, 1 - probDrafted));
+    return survivalProb;
+  }
+
+  // Roster Needs & Bye Week Conflict Evaluator
+  function evaluateRosterNeeds(myRosterSet, currentRound) {
+    const counts = { QB: 0, RB: 0, WR: 0, TE: 0, FLEX: 0 };
+    const byeMap = {};
+
+    myRosterSet.forEach(key => {
+      const p = groupedPlayersMap.get(key);
+      if (p) {
+        if (counts[p.position] !== undefined) counts[p.position]++;
+        const bye = TEAM_BYE_WEEKS[p.team];
+        if (bye) {
+          byeMap[bye] = (byeMap[bye] || 0) + 1;
+        }
+      }
+    });
+
+    const urgency = { QB: 1.0, RB: 1.0, WR: 1.0, TE: 1.0 };
+    
+    // Dynamic positional need weighting
+    if (counts.QB === 0 && currentRound >= 6) urgency.QB += (currentRound - 5) * 0.35;
+    if (counts.TE === 0 && currentRound >= 5) urgency.TE += (currentRound - 4) * 0.30;
+    if (counts.RB < 2 && currentRound >= 3) urgency.RB += (3 - counts.RB) * 0.45;
+    if (counts.WR < 3 && currentRound >= 3) urgency.WR += (3 - counts.WR) * 0.40;
+    
+    // Saturation dampening
+    if (counts.RB >= 4) urgency.RB *= 0.55;
+    if (counts.WR >= 5) urgency.WR *= 0.55;
+    if (counts.QB >= 2) urgency.QB *= 0.25;
+    if (counts.TE >= 2) urgency.TE *= 0.25;
+
+    return { counts, urgency, byeMap };
+  }
+
+  // Candidate Composite Scoring Engine
+  function evaluateCandidateScore(player, turnsInfo, rosterNeeds, strategyMode) {
+    let score = 100 - (player.pos_num || 50);
+
+    // ADP Value Delta (Is player available past their ADP?)
+    const targetPick = turnsInfo.isOnTheClock ? turnsInfo.currentPickNo : (turnsInfo.currentUserPick || turnsInfo.currentPickNo);
+    const adpValue = player.sleeper_adp ? (targetPick - player.sleeper_adp) : 0;
+    score += Math.max(-20, Math.min(30, adpValue * 1.2));
+
+    // Stance Weighting
+    const signatureStances = getSignatureStances(player);
+    if (signatureStances.includes('Exodia')) score += 22;
+    if (signatureStances.includes('The Twelve')) score += 18;
+    if (signatureStances.includes("Guru's Guys")) score += 18;
+    if (signatureStances.includes('Must-Draft')) score += 15;
+    if (signatureStances.includes('Hansen 50') || signatureStances.includes('Hansen-50')) score += 12;
+
+    const consensus = evaluatePlayerConsensus(player);
+    if (consensus.type === 'FADE') score -= 25;
+    if (consensus.type === 'SPLIT') score -= 5;
+
+    // Survival Odds / Tier Cliff Bonus (If high-value player won't survive to next pick)
+    const survivalToNext = calculateSurvivalProbability(player.sleeper_adp, turnsInfo.nextUserPick);
+    if (turnsInfo.isOnTheClock || turnsInfo.isOnDeck) {
+      if (survivalToNext < 0.25 && score > 70) {
+        score += 15; // Tier cliff urgency
+      }
+    }
+
+    // Positional Need Multiplier
+    const posMultiplier = rosterNeeds.urgency[player.position] || 1.0;
+    score *= posMultiplier;
+
+    // Strategy Profile Adjustments
+    if (strategyMode === 'exodia_hunter') {
+      if (signatureStances.length > 0) score *= 1.35;
+    } else if (strategyMode === 'hero_rb') {
+      if (player.position === 'RB' && rosterNeeds.counts.RB === 0) score *= 1.4;
+      else if (player.position === 'RB' && rosterNeeds.counts.RB >= 1) score *= 0.8;
+      else if (player.position === 'WR') score *= 1.2;
+    } else if (strategyMode === 'zero_rb') {
+      if (player.position === 'WR' && turnsInfo.currentRound <= 6) score *= 1.4;
+      if (player.position === 'RB' && turnsInfo.currentRound <= 5) score *= 0.5;
+    }
+
+    return {
+      score,
+      survivalToNext,
+      isCliffRisk: (survivalToNext < 0.30),
+      signatureStances
+    };
+  }
+
+  // Instant Heuristic Strategy Generator (0ms Fallback)
+  function generateHeuristicStrategy(turnsInfo, rosterNeeds, availableCandidates) {
+    if (!availableCandidates || availableCandidates.length === 0) {
+      return {
+        primary: null,
+        contingency: null,
+        rationale: 'No available players remaining in pool.',
+        lookaheadList: [],
+        cliffList: []
+      };
+    }
+
+    const scored = availableCandidates.map(p => {
+      const evalResult = evaluateCandidateScore(p, turnsInfo, rosterNeeds, aiStrategyMode);
+      return { player: p, ...evalResult };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+
+    const primary = scored[0];
+    let contingency = scored.find(s => s.player.canonical_key !== primary.player.canonical_key && s.player.position !== primary.player.position);
+    if (!contingency && scored.length > 1) contingency = scored[1];
+
+    // Lookahead targets (High survival odds for next round)
+    const lookaheadList = scored
+      .filter(s => s.player.canonical_key !== primary.player.canonical_key && s.survivalToNext >= 0.50)
+      .slice(0, 4);
+
+    // Cliff list (High value, low survival odds)
+    const cliffList = scored
+      .filter(s => s.isCliffRisk && s.score > 65)
+      .slice(0, 3);
+
+    // Formulate Expert Strategic Rationale
+    let rationale = '';
+    const p = primary.player;
+    const authTakes = p.raw_takes || [];
+    const topReason = authTakes.find(t => t.key_reason)?.key_reason || '';
+    const stancesText = primary.signatureStances.length > 0 ? primary.signatureStances.join(' / ') : (p.stance || 'Value Target');
+
+    if (turnsInfo.isOnTheClock) {
+      rationale = `🚨 <strong>ON THE CLOCK:</strong> Draft <strong>${escapeHtml(p.player_name)}</strong> (${p.position} - ${p.team}). Stance: <em>${escapeHtml(stancesText)}</em>. `;
+      if (primary.isCliffRisk) {
+        rationale += `<strong>Tier Cliff Alert:</strong> Only <strong>${Math.round(primary.survivalToNext * 100)}% survival odds</strong> to your next turn (Pick #${turnsInfo.nextUserPick || '—'}). `;
+      }
+      if (topReason) {
+        rationale += `<em>"${escapeHtml(topReason.slice(0, 140))}..."</em> `;
+      }
+      if (contingency) {
+        rationale += `If sniped, pivot to <strong>${escapeHtml(contingency.player.player_name)}</strong> (${contingency.player.position}).`;
+      }
+    } else if (turnsInfo.isOnDeck) {
+      rationale = `⏳ <strong>ON DECK (${turnsInfo.picksAway} pick${turnsInfo.picksAway > 1 ? 's' : ''} away):</strong> Prepare to lock in <strong>${escapeHtml(p.player_name)}</strong> (${p.position}). `;
+      if (primary.isCliffRisk) {
+        rationale += `High demand tier; unlikely to make it past this window. `;
+      }
+      if (contingency) {
+        rationale += `Backup option: <strong>${escapeHtml(contingency.player.player_name)}</strong>.`;
+      }
+    } else {
+      const dist = turnsInfo.picksAway ? `${turnsInfo.picksAway} picks away (Pick #${turnsInfo.currentUserPick})` : `Round ${turnsInfo.currentRound}`;
+      rationale = `🎯 <strong>PLANNING (${dist}):</strong> Top projected board target is <strong>${escapeHtml(p.player_name)}</strong> (${p.position} - ADP ${p.sleeper_adp || '—'}). `;
+      if (lookaheadList.length > 0) {
+        const safeNames = lookaheadList.map(l => l.player.player_name).join(', ');
+        rationale += `Safe to let fall for later turns: <em>${escapeHtml(safeNames)}</em>.`;
+      }
+    }
+
+    return {
+      primary,
+      contingency,
+      rationale,
+      lookaheadList,
+      cliffList
+    };
+  }
+
+  // Gemini LLM Strategic Reasoning Integration
+  async function queryGeminiStrategist(turnsInfo, rosterNeeds, topCandidates, heuristicAdvice) {
+    if (!geminiApiKey) {
+      return {
+        ...heuristicAdvice,
+        isAiGenerated: false,
+        aiNotice: '💡 Add your Gemini API Key in ⚙️ Settings for live AI deep tactical reasoning.'
+      };
+    }
+
+    isAiGenerating = true;
+    updateAiAdvisorHudGenerating(true);
+
+    const candidatesPayload = topCandidates.slice(0, 8).map(c => ({
+      name: c.player.player_name,
+      pos: c.player.position,
+      team: c.player.team,
+      adp: c.player.sleeper_adp,
+      survival_to_next_pick_pct: Math.round(c.survivalToNext * 100),
+      is_cliff_risk: c.isCliffRisk,
+      stances: c.signatureStances,
+      expert_blurb: (c.player.raw_takes?.[0]?.key_reason || '').slice(0, 120)
+    }));
+
+    const promptPayload = {
+      system_role: "You are the FantasyPoints AI Chief Draft Strategist. You provide sharp, decisive, high-IQ draft recommendations combining Scott Barrett and John Hansen analytics with mathematical turn lookahead.",
+      draft_state: {
+        current_pick: turnsInfo.currentPickNo,
+        current_round: turnsInfo.currentRound,
+        user_slot: turnsInfo.userSlot,
+        is_on_the_clock: turnsInfo.isOnTheClock,
+        picks_until_turn: turnsInfo.picksAway,
+        next_turn_pick_number: turnsInfo.nextUserPick,
+        intervening_picks_between_turns: turnsInfo.interveningPicks,
+        current_roster_counts: rosterNeeds.counts,
+        strategy_mode: aiStrategyMode
+      },
+      top_available_players: candidatesPayload,
+      task: "Give a 2 to 3 sentence tactical draft recommendation. Specify: 1) Who to pick and why (referencing analyst takes or tier value), 2) What to do at the next pick based on survival odds, and 3) One backup pivot."
+    };
+
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${geminiApiKey}`;
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: JSON.stringify(promptPayload) }]
+          }],
+          generationConfig: {
+            temperature: 0.3,
+            maxOutputTokens: 350
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error?.message || `HTTP ${response.status}`);
+      }
+
+      const resData = await response.json();
+      const generatedText = resData.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (generatedText) {
+        return {
+          ...heuristicAdvice,
+          rationale: generatedText.trim(),
+          isAiGenerated: true,
+          aiModelUsed: aiModel
+        };
+      } else {
+        throw new Error('Empty AI response');
+      }
+    } catch (err) {
+      console.warn('Gemini AI Advisor query failed, falling back to heuristic engine:', err);
+      return {
+        ...heuristicAdvice,
+        isAiGenerated: false,
+        aiNotice: `⚠️ Gemini call error (${err.message}). Showing heuristic analytics.`
+      };
+    } finally {
+      isAiGenerating = false;
+      updateAiAdvisorHudGenerating(false);
+    }
+  }
+
+  function updateAiAdvisorHudGenerating(generating) {
+    if (aiDeepReasonBtn) {
+      aiDeepReasonBtn.disabled = generating;
+      aiDeepReasonBtn.innerHTML = generating 
+        ? '<span class="sync-spin-target">⚡</span> Analyzing...' 
+        : '<span>✨ Deep Reason</span>';
+    }
+  }
+
+  // Render AI Advisor HUD UI
+  function renderAiAdvisorHudUI(turnsInfo, advice) {
+    if (!aiAdvisorHud || !isAiAdvisorVisible) {
+      if (aiAdvisorHud) aiAdvisorHud.style.display = 'none';
+      return;
+    }
+    aiAdvisorHud.style.display = 'block';
+
+    // Update Collapsed State
+    if (isAiHudCollapsed) {
+      aiAdvisorHud.classList.add('collapsed');
+      if (aiMinimizeIcon) aiMinimizeIcon.textContent = '▼';
+    } else {
+      aiAdvisorHud.classList.remove('collapsed');
+      if (aiMinimizeIcon) aiMinimizeIcon.textContent = '▲';
+    }
+
+    // Update Turn Badge & Clock Status
+    aiAdvisorHud.classList.remove('on-the-clock', 'on-deck');
+    if (aiTurnBadge) {
+      aiTurnBadge.className = 'ai-turn-badge';
+      if (turnsInfo.isOnTheClock) {
+        aiAdvisorHud.classList.add('on-the-clock');
+        aiTurnBadge.classList.add('ai-turn-on-clock');
+        if (aiTurnIcon) aiTurnIcon.textContent = '🚨';
+        if (aiTurnText) aiTurnText.textContent = `ON THE CLOCK (Rd ${turnsInfo.currentRound}.${turnsInfo.pickInRound} - Pick #${turnsInfo.currentPickNo})`;
+      } else if (turnsInfo.isOnDeck) {
+        aiAdvisorHud.classList.add('on-deck');
+        aiTurnBadge.classList.add('ai-turn-on-deck');
+        if (aiTurnIcon) aiTurnIcon.textContent = '⏳';
+        if (aiTurnText) aiTurnText.textContent = `ON DECK (${turnsInfo.picksAway} away - Pick #${turnsInfo.currentUserPick})`;
+      } else if (turnsInfo.hasSlot && turnsInfo.picksAway !== null) {
+        aiTurnBadge.classList.add('ai-turn-waiting');
+        if (aiTurnIcon) aiTurnIcon.textContent = '🕒';
+        if (aiTurnText) aiTurnText.textContent = `${turnsInfo.picksAway} Picks Away (Pick #${turnsInfo.currentUserPick})`;
+      } else {
+        aiTurnBadge.classList.add('ai-turn-waiting');
+        if (aiTurnIcon) aiTurnIcon.textContent = '⚡';
+        if (aiTurnText) aiTurnText.textContent = `Pick #${turnsInfo.currentPickNo} (Choose Slot in Sync Modal)`;
+      }
+    }
+
+    // Update Next Turn Distance Chip
+    if (aiNextTurnDistance && aiNextTurnText) {
+      if (turnsInfo.nextUserPick) {
+        aiNextTurnText.textContent = `#${turnsInfo.nextUserPick} (${turnsInfo.interveningPicks} picks away)`;
+        aiNextTurnDistance.style.display = 'inline-block';
+      } else {
+        aiNextTurnDistance.style.display = 'none';
+      }
+    }
+
+    if (!advice || !advice.primary) {
+      if (aiHudBody) {
+        aiHudBody.innerHTML = `
+          <div class="ai-hud-loading">
+            <span>⚡</span> Select your draft slot or mark players drafted to activate real-time advisor.
+          </div>
+        `;
+      }
+      return;
+    }
+
+    const p = advice.primary.player;
+    const survivalPct = Math.round(advice.primary.survivalToNext * 100);
+    let survivalPillClass = 'survival-safe';
+    let survivalPillIcon = '🛡️';
+    let survivalPillText = `${survivalPct}% Survival`;
+
+    if (advice.primary.isCliffRisk) {
+      survivalPillClass = 'survival-cliff';
+      survivalPillIcon = '⚠️';
+      survivalPillText = `${survivalPct}% Tier Cliff!`;
+    } else if (survivalPct < 65) {
+      survivalPillClass = 'survival-med';
+      survivalPillIcon = '⚖️';
+      survivalPillText = `${survivalPct}% Survival`;
+    }
+
+    const signatureBadgesHtml = advice.primary.signatureStances.map(st => {
+      const cls = st.replace(/\s+/g, '-').replace(/'/g, '');
+      return `<span class="badge-stance ${cls}" style="font-size: 0.7rem; padding: 2px 6px;">${escapeHtml(st)}</span>`;
+    }).join(' ');
+
+    const lookaheadItemsHtml = (advice.lookaheadList || []).map(item => {
+      const surv = Math.round(item.survivalToNext * 100);
+      return `
+        <div class="ai-lookahead-item">
+          <span class="ai-lookahead-name">
+            <span class="badge-pos ${item.player.position}" style="font-size: 0.65rem; padding: 1px 4px;">${item.player.position}</span>
+            ${escapeHtml(item.player.player_name)}
+          </span>
+          <span class="survival-pill survival-safe" style="font-size: 0.68rem; padding: 1px 5px;">
+            ${surv}%
+          </span>
+        </div>
+      `;
+    }).join('') || '<div style="font-size: 0.75rem; color: var(--text-muted);">No safe targets projected</div>';
+
+    const contingencyHtml = advice.contingency ? `
+      <div class="ai-contingency-box">
+        <strong>Pivot / Backup:</strong> ${escapeHtml(advice.contingency.player.player_name)} 
+        <span class="badge-pos ${advice.contingency.player.position}" style="font-size: 0.65rem; padding: 1px 4px;">${advice.contingency.player.position}</span>
+        (ADP ${advice.contingency.player.sleeper_adp || '—'})
+      </div>
+    ` : '';
+
+    const aiNoticeHtml = advice.aiNotice ? `
+      <div style="font-size: 0.72rem; color: #38bdf8; margin-top: 6px; font-style: italic;">
+        ${advice.aiNotice}
+      </div>
+    ` : (advice.isAiGenerated ? `
+      <div style="font-size: 0.72rem; color: #a855f7; margin-top: 6px; font-weight: 700;">
+        ✨ Deep Analysis via ${advice.aiModelUsed || 'Gemini'}
+      </div>
+    ` : '');
+
+    if (aiHudBody) {
+      aiHudBody.innerHTML = `
+        <div class="ai-advice-grid">
+          <!-- Primary Recommendation Card -->
+          <div class="ai-primary-card">
+            <div>
+              <div class="ai-rec-header">
+                <span class="ai-rec-label">⭐ Recommended Pick</span>
+                <span class="survival-pill ${survivalPillClass}" title="Estimated odds this player is still available at your NEXT draft pick">
+                  ${survivalPillIcon} ${survivalPillText}
+                </span>
+              </div>
+              <div class="ai-rec-player">
+                <span class="badge-pos ${p.position}">${p.position}</span>
+                <span class="ai-rec-name">${escapeHtml(p.player_name)}</span>
+              </div>
+              <div class="ai-rec-meta">
+                <span>Team: <strong>${escapeHtml(p.team)}</strong></span>
+                <span>ADP: <strong>${p.sleeper_adp ? p.sleeper_adp.toFixed(1) : '—'}</strong></span>
+                <span>Pos Rank: <strong>${escapeHtml(p.pos_rank || '—')}</strong></span>
+              </div>
+              <div class="ai-rec-badges">
+                ${signatureBadgesHtml}
+              </div>
+            </div>
+            <div style="margin-top: 8px;">
+              <button class="btn-draft-me" style="width: 100%; padding: 6px 10px; font-size: 0.8rem; font-weight: 800;" data-player="${escapeHtml(p.canonical_key)}" onclick="event.stopPropagation();">
+                🏈 Draft for MY Team
+              </button>
+            </div>
+          </div>
+
+          <!-- Strategic Reasoning & Tactical Rationale -->
+          <div class="ai-rationale-card">
+            <div class="ai-rationale-title">
+              <span>🎯 Tactical Analysis & Lookahead Rationale</span>
+            </div>
+            <div class="ai-rationale-text">
+              ${advice.rationale}
+            </div>
+            ${contingencyHtml}
+            ${aiNoticeHtml}
+          </div>
+
+          <!-- Turn Lookahead Queue -->
+          <div class="ai-lookahead-card">
+            <div class="ai-lookahead-title">
+              <span>🔮 Next Turn Safe Targets</span>
+            </div>
+            <div class="ai-lookahead-list">
+              ${lookaheadItemsHtml}
+            </div>
+          </div>
+        </div>
+      `;
+
+      const draftMeBtn = aiHudBody.querySelector('.btn-draft-me');
+      if (draftMeBtn) {
+        draftMeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          toggleDraftForMe(p.canonical_key);
+        });
+      }
+    }
+  }
+
+  // Update AI Advisor Pipeline
+  async function updateAiDraftAdvisor(forceDeepReason = false) {
+    if (!groupedPlayersMap || groupedPlayersMap.size === 0) return;
+
+    const totalDraftedCount = myRosterPlayers.size + otherDraftedPlayers.size;
+    const currentPickNo = totalDraftedCount + 1;
+    const teams = draftMetaObj?.settings?.teams || 12;
+    const totalRounds = draftMetaObj?.settings?.rounds || 16;
+
+    const turnsInfo = calculateDraftTurns(currentPickNo, teams, myDraftSlot, totalRounds);
+    const rosterNeeds = evaluateRosterNeeds(myRosterPlayers, turnsInfo.currentRound);
+
+    // Available Undrafted Players
+    const available = [];
+    groupedPlayersMap.forEach(p => {
+      if (!myRosterPlayers.has(p.canonical_key) && !otherDraftedPlayers.has(p.canonical_key)) {
+        available.push(p);
+      }
+    });
+
+    const heuristicAdvice = generateHeuristicStrategy(turnsInfo, rosterNeeds, available);
+    currentAiAdvice = heuristicAdvice;
+    renderAiAdvisorHudUI(turnsInfo, heuristicAdvice);
+
+    const turnKey = `${currentPickNo}_${myDraftSlot}_${turnsInfo.isOnTheClock}`;
+    const shouldAutoDeepReason = (isAiAutoTrigger && turnsInfo.isOnTheClock && turnKey !== lastEvaluatedTurnKey && geminiApiKey);
+
+    if (forceDeepReason || shouldAutoDeepReason) {
+      lastEvaluatedTurnKey = turnKey;
+      const scoredCandidates = available.map(p => ({
+        player: p,
+        ...evaluateCandidateScore(p, turnsInfo, rosterNeeds, aiStrategyMode)
+      })).sort((a, b) => b.score - a.score);
+
+      const aiAdvice = await queryGeminiStrategist(turnsInfo, rosterNeeds, scoredCandidates, heuristicAdvice);
+      currentAiAdvice = aiAdvice;
+      renderAiAdvisorHudUI(turnsInfo, aiAdvice);
+    }
+  }
+
+  // Initialize AI Advisor Event Listeners
+  function initAiAdvisorControls() {
+    if (toggleAiAdvisorBtn) {
+      toggleAiAdvisorBtn.addEventListener('click', () => {
+        isAiAdvisorVisible = !isAiAdvisorVisible;
+        localStorage.setItem('fp_ai_advisor_visible', isAiAdvisorVisible);
+        if (isAiAdvisorVisible) {
+          toggleAiAdvisorBtn.classList.add('active');
+        } else {
+          toggleAiAdvisorBtn.classList.remove('active');
+        }
+        updateAiDraftAdvisor();
+      });
+    }
+
+    if (aiMinimizeBtn) {
+      aiMinimizeBtn.addEventListener('click', () => {
+        isAiHudCollapsed = !isAiHudCollapsed;
+        localStorage.setItem('fp_ai_hud_collapsed', isAiHudCollapsed);
+        if (currentAiAdvice) {
+          const totalDraftedCount = myRosterPlayers.size + otherDraftedPlayers.size;
+          const teams = draftMetaObj?.settings?.teams || 12;
+          const turnsInfo = calculateDraftTurns(totalDraftedCount + 1, teams, myDraftSlot);
+          renderAiAdvisorHudUI(turnsInfo, currentAiAdvice);
+        }
+      });
+    }
+
+    if (aiDeepReasonBtn) {
+      aiDeepReasonBtn.addEventListener('click', () => {
+        updateAiDraftAdvisor(true);
+      });
+    }
+
+    if (aiRefreshBtn) {
+      aiRefreshBtn.addEventListener('click', () => {
+        updateAiDraftAdvisor(false);
+      });
+    }
+
+    // AI Settings Modal
+    if (openAiSettingsBtn && aiSettingsModal) {
+      openAiSettingsBtn.addEventListener('click', () => {
+        if (geminiApiKeyInput) geminiApiKeyInput.value = geminiApiKey;
+        if (aiModelSelect) aiModelSelect.value = aiModel;
+        if (aiStrategyModeSelect) aiStrategyModeSelect.value = aiStrategyMode;
+        if (aiAutoTriggerCheck) aiAutoTriggerCheck.checked = isAiAutoTrigger;
+        if (aiSettingsStatusMsg) aiSettingsStatusMsg.textContent = '';
+        aiSettingsModal.classList.add('open');
+        aiSettingsModal.setAttribute('aria-hidden', 'false');
+      });
+    }
+
+    if (aiSettingsCloseBtn && aiSettingsModal) {
+      aiSettingsCloseBtn.addEventListener('click', () => {
+        aiSettingsModal.classList.remove('open');
+        aiSettingsModal.setAttribute('aria-hidden', 'true');
+      });
+    }
+
+    if (saveAiSettingsBtn) {
+      saveAiSettingsBtn.addEventListener('click', () => {
+        if (geminiApiKeyInput) {
+          geminiApiKey = geminiApiKeyInput.value.trim();
+          localStorage.setItem('fp_gemini_api_key', geminiApiKey);
+        }
+        if (aiModelSelect) {
+          aiModel = aiModelSelect.value;
+          localStorage.setItem('fp_ai_model', aiModel);
+        }
+        if (aiStrategyModeSelect) {
+          aiStrategyMode = aiStrategyModeSelect.value;
+          localStorage.setItem('fp_ai_strategy', aiStrategyMode);
+        }
+        if (aiAutoTriggerCheck) {
+          isAiAutoTrigger = aiAutoTriggerCheck.checked;
+          localStorage.setItem('fp_ai_auto_trigger', isAiAutoTrigger);
+        }
+
+        if (aiSettingsStatusMsg) {
+          aiSettingsStatusMsg.textContent = '✅ Settings saved successfully!';
+        }
+
+        setTimeout(() => {
+          if (aiSettingsModal) {
+            aiSettingsModal.classList.remove('open');
+            aiSettingsModal.setAttribute('aria-hidden', 'true');
+          }
+          updateAiDraftAdvisor();
+        }, 600);
+      });
+    }
+  }
+
+  initAiAdvisorControls();
 
   // Auto-Resume Active Draft Connection on page load
   if (activeDraftId) {

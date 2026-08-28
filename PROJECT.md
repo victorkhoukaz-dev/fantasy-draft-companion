@@ -104,9 +104,16 @@ class ArticleExtraction(BaseModel):
 | `fp_view_mode` | String | `'list'` or `'card'` layout mode |
 | `fp_sort_by` | String | `'adp'`, `'pos_rank'`, or `'stance'` |
 | `fp_sidebar_collapsed` | Boolean | State of right roster drawer |
+| `fp_gemini_api_key` | String | User's local Gemini API key for real-time strategic reasoning |
+| `fp_ai_model` | String | Gemini model selected (`gemini-2.5-flash`, etc.) |
+| `fp_ai_strategy` | String | Strategy profile (`balanced`, `exodia_hunter`, `hero_rb`, `zero_rb`) |
+| `fp_ai_auto_trigger` | Boolean | Auto-generate deep reasoning when On the Clock |
+| `fp_ai_advisor_visible` | Boolean | Toggle visibility of AI Advisor HUD |
+| `fp_ai_hud_collapsed` | Boolean | Minimized state of AI Advisor HUD body |
 
 ### 3. Key UI Components & Interactions
-* **Header Bar**: Live Sleeper API status badge, total/active player counters, global search bar, sorting dropdown, position filter chips (`ALL`, `DECK`, `QB`, `RB`, `WR`, `TE`), and analyst filter dropdown.
+* **AI Live Draft Advisor HUD**: Dynamic header widget providing real-time draft turn calculations, mathematical survival probability to the user's *subsequent* turn, tier cliff warnings, primary pick recommendations, backup pivots, and on-demand or automatic deep reasoning via Google Gemini.
+* **Header Bar**: Live Sleeper API status badge, total/active player counters, global search bar, sorting dropdown, position filter chips (`ALL`, `DECK`, `QB`, `RB`, `WR`, `TE`), AI Advisor toggle button, and AI Settings modal trigger.
 * **Player Board Grid**: Rendered dynamically via `app.js`. Highlights stance badges with custom CSS gradients, target round advice, consensus metrics, and action buttons (*Draft*, *Taken*, *Star*, *Compare*).
 * **Roster Sidebar**: Displays 15 standard lineup slots (`QB1`, `RB1`, `RB2`, `WR1`, `WR2`, `TE1`, `FLEX1`, `FLEX2`, `BENCH1-7`).
   * **Bye Week Overlap Detector**: Warns when multiple starters share identical bye weeks using `TEAM_BYE_WEEKS`.
