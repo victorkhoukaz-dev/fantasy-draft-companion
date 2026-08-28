@@ -127,6 +127,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const groqApiKeyInput = document.getElementById('groqApiKeyInput');
   const geminiApiKeyInput = document.getElementById('geminiApiKeyInput');
   const aiModelSelect = document.getElementById('aiModelSelect');
+  const customModelGroup = document.getElementById('customModelGroup');
+  const aiCustomModelInput = document.getElementById('aiCustomModelInput');
   const aiStrategyModeSelect = document.getElementById('aiStrategyModeSelect');
   const aiAutoTriggerCheck = document.getElementById('aiAutoTriggerCheck');
   const saveAiSettingsBtn = document.getElementById('saveAiSettingsBtn');
@@ -136,7 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let aiProvider = localStorage.getItem('fp_ai_provider') || 'groq';
   let groqApiKey = localStorage.getItem('fp_groq_api_key') || '';
   let geminiApiKey = localStorage.getItem('fp_gemini_api_key') || '';
-  let aiModel = localStorage.getItem('fp_ai_model') || (aiProvider === 'groq' ? 'llama-3.3-70b-versatile' : 'gemini-2.5-flash');
+  let aiModel = localStorage.getItem('fp_ai_model') || (aiProvider === 'groq' ? 'qwen/qwen3.8-27b' : 'gemini-2.5-flash');
   let aiStrategyMode = localStorage.getItem('fp_ai_strategy') || 'balanced';
   let isAiAutoTrigger = localStorage.getItem('fp_ai_auto_trigger') !== 'false';
   let isAiAdvisorVisible = localStorage.getItem('fp_ai_advisor_visible') !== 'false';
@@ -1971,7 +1973,7 @@ document.addEventListener('DOMContentLoaded', () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: aiModel || 'llama-3.3-70b-versatile',
+          model: aiModel || 'qwen/qwen3.8-27b',
           messages: [
             { role: 'system', content: promptPayload.system_role + ' ' + promptPayload.user_draft_strategy_rules },
             { role: 'user', content: JSON.stringify(promptPayload) }
@@ -1994,7 +1996,7 @@ document.addEventListener('DOMContentLoaded', () => {
           ...heuristicAdvice,
           rationale: generatedText.trim(),
           isAiGenerated: true,
-          aiModelUsed: `Groq (${aiModel || 'llama-3.3-70b'})`
+          aiModelUsed: `Groq (${aiModel || 'qwen/qwen3.8-27b'})`
         };
       } else {
         throw new Error('Empty Groq response');
@@ -2385,36 +2387,57 @@ document.addEventListener('DOMContentLoaded', () => {
   function syncProviderModelOptions() {
     if (!aiModelSelect) return;
     aiModelSelect.innerHTML = '';
+    
+    let isCustom = false;
     if (aiProvider === 'groq') {
       if (groqKeyGroup) groqKeyGroup.style.display = 'block';
       if (geminiKeyGroup) geminiKeyGroup.style.display = 'none';
       const groqModels = [
-        { val: 'llama-3.3-70b-versatile', label: 'llama-3.3-70b-versatile (Recommended - High IQ & ~300ms)' },
-        { val: 'llama-3.1-8b-instant', label: 'llama-3.1-8b-instant (Fastest ~150ms)' },
-        { val: 'llama-3.1-70b-versatile', label: 'llama-3.1-70b-versatile' }
+        { val: 'qwen/qwen3.8-27b', label: 'qwen/qwen3.8-27b (Recommended - Latest & Sharpest ~300ms)' },
+        { val: 'qwen/qwen3.6-27b', label: 'qwen/qwen3.6-27b (Fast & Stable ~300ms)' },
+        { val: 'custom', label: 'Custom Groq Model ID...' }
       ];
       groqModels.forEach(m => {
         const opt = document.createElement('option');
         opt.value = m.val;
         opt.textContent = m.label;
-        if (aiModel === m.val || (!aiModel && m.val === 'llama-3.3-70b-versatile')) opt.selected = true;
+        if (aiModel === m.val || (!aiModel && m.val === 'qwen/qwen3.8-27b')) {
+          opt.selected = true;
+        }
         aiModelSelect.appendChild(opt);
       });
+      if (aiModel && !['qwen/qwen3.8-27b', 'qwen/qwen3.6-27b'].includes(aiModel)) {
+        aiModelSelect.value = 'custom';
+        isCustom = true;
+        if (aiCustomModelInput) aiCustomModelInput.value = aiModel;
+      }
     } else {
       if (groqKeyGroup) groqKeyGroup.style.display = 'none';
       if (geminiKeyGroup) geminiKeyGroup.style.display = 'block';
       const geminiModels = [
         { val: 'gemini-2.5-flash', label: 'gemini-2.5-flash (Fastest & Recommended)' },
         { val: 'gemini-2.0-flash', label: 'gemini-2.0-flash' },
-        { val: 'gemini-1.5-flash', label: 'gemini-1.5-flash' }
+        { val: 'gemini-1.5-flash', label: 'gemini-1.5-flash' },
+        { val: 'custom', label: 'Custom Gemini Model ID...' }
       ];
       geminiModels.forEach(m => {
         const opt = document.createElement('option');
         opt.value = m.val;
         opt.textContent = m.label;
-        if (aiModel === m.val || (!aiModel && m.val === 'gemini-2.5-flash')) opt.selected = true;
+        if (aiModel === m.val || (!aiModel && m.val === 'gemini-2.5-flash')) {
+          opt.selected = true;
+        }
         aiModelSelect.appendChild(opt);
       });
+      if (aiModel && !['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'].includes(aiModel)) {
+        aiModelSelect.value = 'custom';
+        isCustom = true;
+        if (aiCustomModelInput) aiCustomModelInput.value = aiModel;
+      }
+    }
+
+    if (customModelGroup) {
+      customModelGroup.style.display = isCustom ? 'block' : 'none';
     }
   }
 
@@ -2462,8 +2485,16 @@ document.addEventListener('DOMContentLoaded', () => {
       aiProviderSelect.value = aiProvider;
       aiProviderSelect.addEventListener('change', (e) => {
         aiProvider = e.target.value;
-        aiModel = (aiProvider === 'groq') ? 'llama-3.3-70b-versatile' : 'gemini-2.5-flash';
+        aiModel = (aiProvider === 'groq') ? 'qwen/qwen3.8-27b' : 'gemini-2.5-flash';
         syncProviderModelOptions();
+      });
+    }
+
+    if (aiModelSelect) {
+      aiModelSelect.addEventListener('change', (e) => {
+        if (customModelGroup) {
+          customModelGroup.style.display = (e.target.value === 'custom') ? 'block' : 'none';
+        }
       });
     }
 
@@ -2504,7 +2535,11 @@ document.addEventListener('DOMContentLoaded', () => {
           localStorage.setItem('fp_gemini_api_key', geminiApiKey);
         }
         if (aiModelSelect) {
-          aiModel = aiModelSelect.value;
+          if (aiModelSelect.value === 'custom' && aiCustomModelInput) {
+            aiModel = aiCustomModelInput.value.trim() || (aiProvider === 'groq' ? 'qwen/qwen3.8-27b' : 'gemini-2.5-flash');
+          } else {
+            aiModel = aiModelSelect.value;
+          }
           localStorage.setItem('fp_ai_model', aiModel);
         }
         if (aiStrategyModeSelect) {
