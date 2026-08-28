@@ -10,7 +10,11 @@ __pycache__/
 raw_articles/*.pdf
 !raw_articles/.gitkeep
 
+# Scratch / Temporary artifacts
+scratch/
+
 # IDE & OS files
 .vscode/
 .DS_Store
 Thumbs.db
+
