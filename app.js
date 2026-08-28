@@ -723,7 +723,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const fullText = player.raw_takes.map(t => `${t.key_reason || ''} ${t.target_round_advice || ''} ${t.tier_or_target_round || ''} ${t.source_file || ''}`).join(' ').toLowerCase();
       if (fullText.includes('exodia') && !signature.includes('Exodia')) signature.push('Exodia');
       if ((fullText.includes('the twelve') || fullText.includes("'the twelve'") || fullText.includes('"the twelve"')) && !signature.includes('The Twelve')) signature.push('The Twelve');
-      if ((fullText.includes("guru's guy") || fullText.includes("guru's picks") || fullText.includes("guru's guys") || fullText.includes("hansen best picks") || fullText.includes("hansen's best picks")) && !signature.includes("Guru's Guys")) signature.push("Guru's Guys");
       if ((fullText.includes('hansen 50') || fullText.includes('hansen50')) && !signature.includes('Hansen 50')) signature.push('Hansen 50');
       if ((fullText.includes('dirty thirty') || fullText.includes('dirty 30')) && !signature.includes('Dirty Thirty')) signature.push('Dirty Thirty');
     }
