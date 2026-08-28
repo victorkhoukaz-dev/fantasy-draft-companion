@@ -1761,33 +1761,55 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Candidate Composite Scoring Engine
   function evaluateCandidateScore(player, turnsInfo, rosterNeeds, strategyMode) {
-    // 1. Anchor base score to overall market ADP (or estimated top-200 rank)
     const adp = player.sleeper_adp ? player.sleeper_adp : (player.pos_num ? player.pos_num * 7.5 : 150);
-    let score = Math.max(10, 160 - adp);
+    
+    // 1. Base Score anchored to Market ADP and Official Expert Overall Rank
+    const expertRank = player.fp_overall_rank || adp;
+    const effectiveMarketVal = (adp * 0.65) + (expertRank * 0.35);
+    let score = Math.max(10, 165 - effectiveMarketVal);
 
-    // 2. ADP Value Delta with realistic reach penalty
-    const targetPick = turnsInfo.isOnTheClock ? turnsInfo.currentPickNo : (turnsInfo.currentUserPick || turnsInfo.currentPickNo);
-    const adpValue = targetPick - adp;
-    if (adpValue < 0) {
-      // Reaching ahead of market ADP: heavily penalized in early rounds (1-3)
-      const reachMultiplier = turnsInfo.currentRound <= 3 ? 2.5 : 1.4;
-      score += Math.max(-60, adpValue * reachMultiplier);
+    // 2. Reach & Value Delta Calibration
+    const currentPick = turnsInfo.isOnTheClock ? turnsInfo.currentPickNo : (turnsInfo.currentUserPick || turnsInfo.currentPickNo);
+    const reachDelta = currentPick - adp; // negative if reaching (e.g. pick 4 - adp 13 = -9)
+
+    if (reachDelta < 0) {
+      const absReach = Math.abs(reachDelta);
+      if (turnsInfo.currentRound === 1) {
+        // In Round 1: Gentle penalty for 1-2 slots, exponential brake for reaching > 3-4 slots
+        if (absReach <= 2) {
+          score -= absReach * 1.5;
+        } else if (absReach <= 5) {
+          score -= (2 * 1.5) + (absReach - 2) * 3.5;
+        } else {
+          score -= (2 * 1.5) + (3 * 3.5) + (absReach - 5) * 6.0;
+        }
+      } else if (turnsInfo.currentRound <= 3) {
+        score -= absReach * 2.2;
+      } else {
+        score -= absReach * 1.3;
+      }
     } else {
-      // Value fall bonus (reward taking players falling past ADP)
-      score += Math.min(25, adpValue * 1.0);
+      // Value fall bonus (reward taking players falling past market ADP)
+      score += Math.min(22, reachDelta * 1.0);
     }
 
-    // 3. Stance Weighting (Balanced scaling)
+    // 3. Stance Bonus (Capped in early rounds to act as tier-tiebreakers, not draft order overrides)
     const signatureStances = getSignatureStances(player);
-    if (signatureStances.includes('Exodia')) score += 16;
-    if (signatureStances.includes('The Twelve')) score += 12;
-    if (signatureStances.includes("Guru's Guys")) score += 12;
-    if (signatureStances.includes('Must-Draft')) score += 10;
-    if (signatureStances.includes('Hansen 50') || signatureStances.includes('Hansen-50')) score += 8;
+    let stancePoints = 0;
+    if (signatureStances.includes('Exodia')) stancePoints += 14;
+    if (signatureStances.includes('The Twelve')) stancePoints += 10;
+    if (signatureStances.includes("Guru's Guys") || signatureStances.includes("Gurus Guys")) stancePoints += 10;
+    if (signatureStances.includes('Must-Draft')) stancePoints += 8;
+    if (signatureStances.includes('Hansen 50') || signatureStances.includes('Hansen-50')) stancePoints += 6;
 
     const consensus = evaluatePlayerConsensus(player);
-    if (consensus.type === 'FADE') score -= 25;
-    if (consensus.type === 'SPLIT') score -= 5;
+    if (consensus.type === 'FADE') stancePoints -= 25;
+    if (consensus.type === 'SPLIT') stancePoints -= 5;
+
+    if (turnsInfo.currentRound <= 2) {
+      stancePoints = Math.min(14, stancePoints);
+    }
+    score += stancePoints;
 
     // 4. Early Round Positional Strategy Rules (Rounds 1-3)
     if (turnsInfo.currentRound <= 3) {
@@ -1805,11 +1827,11 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // 5. Survival Odds / Tier Cliff Bonus
+    // 5. Survival Odds / Tier Cliff Bonus (Disabled for early top-8 picks)
     const survivalToNext = calculateSurvivalProbability(player.sleeper_adp, turnsInfo.nextUserPick);
     if (turnsInfo.isOnTheClock || turnsInfo.isOnDeck) {
-      if (survivalToNext < 0.25 && score > 60) {
-        score += 14; // Tier cliff urgency
+      if (currentPick >= 9 && survivalToNext < 0.25 && score > 60) {
+        score += 12; // Tier cliff urgency for mid/late rounds
       }
     }
 
@@ -1931,20 +1953,25 @@ document.addEventListener('DOMContentLoaded', () => {
     isAiGenerating = true;
     updateAiAdvisorHudGenerating(true);
 
-    const candidatesPayload = topCandidates.slice(0, 8).map(c => {
+    const mapCandidateToPayload = (c) => {
       const p = c.player;
       const takesSummary = (p.raw_takes || []).slice(0, 2).map(t => `[${t.author || 'Analyst'}]: ${t.key_reason || t.stance || ''}`).join(' | ');
       return {
         name: p.player_name,
         pos: p.position,
         team: p.team,
-        adp: p.sleeper_adp,
+        adp: p.sleeper_adp ? parseFloat(p.sleeper_adp.toFixed(1)) : null,
         survival_to_next_pick_pct: Math.round(c.survivalToNext * 100),
         is_cliff_risk: c.isCliffRisk,
         stances: c.signatureStances,
         expert_database_takes: takesSummary.slice(0, 180)
       };
-    });
+    };
+
+    const immediatePayload = topCandidates.slice(0, 5).map(mapCandidateToPayload);
+    const lookaheadPayload = topCandidates.filter(c => c.survivalToNext >= 0.40).slice(0, 5).map(mapCandidateToPayload);
+
+    const nextPickStr = turnsInfo.nextUserPick ? `Pick #${turnsInfo.nextUserPick}` : 'your next turn';
 
     const promptPayload = {
       system_role: "You are the FantasyPoints AI Chief Draft Strategist. You provide decisive, high-IQ draft recommendations grounded strictly in Scott Barrett and John Hansen analytics and the provided FantasyPoints database. Do NOT hallucinate generic web takes or make assumptions outside the provided expert quotes.",
@@ -1960,8 +1987,12 @@ document.addEventListener('DOMContentLoaded', () => {
         current_roster_counts: rosterNeeds.counts,
         strategy_mode: aiStrategyMode
       },
-      top_available_players: candidatesPayload,
-      task: "Give a 2 to 3 sentence tactical draft recommendation. Specify: 1) Who to pick and why (citing specific Scott Barrett or John Hansen takes from the database), 2) What to do at the next pick based on survival odds, and 3) One backup pivot."
+      immediate_current_turn_candidates: immediatePayload,
+      viable_lookahead_candidates_for_next_turn: lookaheadPayload,
+      instructions: `Give a concise 2 to 3 sentence tactical draft recommendation:
+1) Immediate Pick: Choose the best player from 'immediate_current_turn_candidates' and cite specific Scott Barrett or John Hansen takes.
+2) Next Turn (${nextPickStr}): You MUST ONLY recommend players from 'viable_lookahead_candidates_for_next_turn' (who have high survival odds). NEVER suggest a top player with near-0% survival odds (like a Round 1 player) for a later turn.
+3) Backup Pivot: Name one pivot option from 'immediate_current_turn_candidates' if the primary target is taken.`
     };
 
     try {
@@ -2026,20 +2057,24 @@ document.addEventListener('DOMContentLoaded', () => {
     isAiGenerating = true;
     updateAiAdvisorHudGenerating(true);
 
-    const candidatesPayload = topCandidates.slice(0, 8).map(c => {
+    const mapCandidateToPayload = (c) => {
       const p = c.player;
       const takesSummary = (p.raw_takes || []).slice(0, 2).map(t => `[${t.author || 'Analyst'}]: ${t.key_reason || t.stance || ''}`).join(' | ');
       return {
         name: p.player_name,
         pos: p.position,
         team: p.team,
-        adp: p.sleeper_adp,
+        adp: p.sleeper_adp ? parseFloat(p.sleeper_adp.toFixed(1)) : null,
         survival_to_next_pick_pct: Math.round(c.survivalToNext * 100),
         is_cliff_risk: c.isCliffRisk,
         stances: c.signatureStances,
         expert_database_takes: takesSummary.slice(0, 180)
       };
-    });
+    };
+
+    const immediatePayload = topCandidates.slice(0, 5).map(mapCandidateToPayload);
+    const lookaheadPayload = topCandidates.filter(c => c.survivalToNext >= 0.40).slice(0, 5).map(mapCandidateToPayload);
+    const nextPickStr = turnsInfo.nextUserPick ? `Pick #${turnsInfo.nextUserPick}` : 'your next turn';
 
     const promptPayload = {
       system_role: "You are the FantasyPoints AI Chief Draft Strategist. You provide decisive, high-IQ draft recommendations grounded strictly in Scott Barrett and John Hansen analytics and the provided FantasyPoints database. Do NOT hallucinate generic web takes or make assumptions outside the provided expert quotes.",
@@ -2055,8 +2090,12 @@ document.addEventListener('DOMContentLoaded', () => {
         current_roster_counts: rosterNeeds.counts,
         strategy_mode: aiStrategyMode
       },
-      top_available_players: candidatesPayload,
-      task: "Give a 2 to 3 sentence tactical draft recommendation. Specify: 1) Who to pick and why (citing specific Scott Barrett or John Hansen takes from the database), 2) What to do at the next pick based on survival odds, and 3) One backup pivot."
+      immediate_current_turn_candidates: immediatePayload,
+      viable_lookahead_candidates_for_next_turn: lookaheadPayload,
+      instructions: `Give a concise 2 to 3 sentence tactical draft recommendation:
+1) Immediate Pick: Choose the best player from 'immediate_current_turn_candidates' and cite specific Scott Barrett or John Hansen takes.
+2) Next Turn (${nextPickStr}): You MUST ONLY recommend players from 'viable_lookahead_candidates_for_next_turn' (who have high survival odds). NEVER suggest a top player with near-0% survival odds (like a Round 1 player) for a later turn.
+3) Backup Pivot: Name one pivot option from 'immediate_current_turn_candidates' if the primary target is taken.`
     };
 
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${geminiApiKey}`;
