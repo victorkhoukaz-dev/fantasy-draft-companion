@@ -1749,40 +1749,65 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Candidate Composite Scoring Engine
   function evaluateCandidateScore(player, turnsInfo, rosterNeeds, strategyMode) {
-    let score = 100 - (player.pos_num || 50);
+    // 1. Anchor base score to overall market ADP (or estimated top-200 rank)
+    const adp = player.sleeper_adp ? player.sleeper_adp : (player.pos_num ? player.pos_num * 7.5 : 150);
+    let score = Math.max(10, 160 - adp);
 
-    // ADP Value Delta (Is player available past their ADP?)
+    // 2. ADP Value Delta with realistic reach penalty
     const targetPick = turnsInfo.isOnTheClock ? turnsInfo.currentPickNo : (turnsInfo.currentUserPick || turnsInfo.currentPickNo);
-    const adpValue = player.sleeper_adp ? (targetPick - player.sleeper_adp) : 0;
-    score += Math.max(-20, Math.min(30, adpValue * 1.2));
+    const adpValue = targetPick - adp;
+    if (adpValue < 0) {
+      // Reaching ahead of market ADP: heavily penalized in early rounds (1-3)
+      const reachMultiplier = turnsInfo.currentRound <= 3 ? 2.5 : 1.4;
+      score += Math.max(-60, adpValue * reachMultiplier);
+    } else {
+      // Value fall bonus (reward taking players falling past ADP)
+      score += Math.min(25, adpValue * 1.0);
+    }
 
-    // Stance Weighting
+    // 3. Stance Weighting (Balanced scaling)
     const signatureStances = getSignatureStances(player);
-    if (signatureStances.includes('Exodia')) score += 22;
-    if (signatureStances.includes('The Twelve')) score += 18;
-    if (signatureStances.includes("Guru's Guys")) score += 18;
-    if (signatureStances.includes('Must-Draft')) score += 15;
-    if (signatureStances.includes('Hansen 50') || signatureStances.includes('Hansen-50')) score += 12;
+    if (signatureStances.includes('Exodia')) score += 16;
+    if (signatureStances.includes('The Twelve')) score += 12;
+    if (signatureStances.includes("Guru's Guys")) score += 12;
+    if (signatureStances.includes('Must-Draft')) score += 10;
+    if (signatureStances.includes('Hansen 50') || signatureStances.includes('Hansen-50')) score += 8;
 
     const consensus = evaluatePlayerConsensus(player);
     if (consensus.type === 'FADE') score -= 25;
     if (consensus.type === 'SPLIT') score -= 5;
 
-    // Survival Odds / Tier Cliff Bonus (If high-value player won't survive to next pick)
-    const survivalToNext = calculateSurvivalProbability(player.sleeper_adp, turnsInfo.nextUserPick);
-    if (turnsInfo.isOnTheClock || turnsInfo.isOnDeck) {
-      if (survivalToNext < 0.25 && score > 70) {
-        score += 15; // Tier cliff urgency
+    // 4. Early Round Positional Strategy Rules (Rounds 1-3)
+    if (turnsInfo.currentRound <= 3) {
+      if (player.position === 'QB') {
+        // Strict user rule: Anti-early QB
+        score *= 0.45;
+      } else if (player.position === 'TE') {
+        // User rule: Anti-early TE except elite tier (Bowers & McBride)
+        const isAllowedEliteTe = (player.canonical_key === 'brockbowers' || player.canonical_key === 'treymcbride');
+        if (!isAllowedEliteTe) {
+          score *= 0.45;
+        } else {
+          score *= 0.90; // Normal weighting for Bowers/McBride in Round 2-3
+        }
       }
     }
 
-    // Positional Need Multiplier
+    // 5. Survival Odds / Tier Cliff Bonus
+    const survivalToNext = calculateSurvivalProbability(player.sleeper_adp, turnsInfo.nextUserPick);
+    if (turnsInfo.isOnTheClock || turnsInfo.isOnDeck) {
+      if (survivalToNext < 0.25 && score > 60) {
+        score += 14; // Tier cliff urgency
+      }
+    }
+
+    // 6. Positional Need Multiplier
     const posMultiplier = rosterNeeds.urgency[player.position] || 1.0;
     score *= posMultiplier;
 
-    // Strategy Profile Adjustments
+    // 7. Strategy Profile Adjustments
     if (strategyMode === 'exodia_hunter') {
-      if (signatureStances.length > 0) score *= 1.35;
+      if (signatureStances.length > 0) score *= 1.30;
     } else if (strategyMode === 'hero_rb') {
       if (player.position === 'RB' && rosterNeeds.counts.RB === 0) score *= 1.4;
       else if (player.position === 'RB' && rosterNeeds.counts.RB >= 1) score *= 0.8;
@@ -1890,19 +1915,24 @@ document.addEventListener('DOMContentLoaded', () => {
     isAiGenerating = true;
     updateAiAdvisorHudGenerating(true);
 
-    const candidatesPayload = topCandidates.slice(0, 8).map(c => ({
-      name: c.player.player_name,
-      pos: c.player.position,
-      team: c.player.team,
-      adp: c.player.sleeper_adp,
-      survival_to_next_pick_pct: Math.round(c.survivalToNext * 100),
-      is_cliff_risk: c.isCliffRisk,
-      stances: c.signatureStances,
-      expert_blurb: (c.player.raw_takes?.[0]?.key_reason || '').slice(0, 120)
-    }));
+    const candidatesPayload = topCandidates.slice(0, 8).map(c => {
+      const p = c.player;
+      const takesSummary = (p.raw_takes || []).slice(0, 2).map(t => `[${t.author || 'Analyst'}]: ${t.key_reason || t.stance || ''}`).join(' | ');
+      return {
+        name: p.player_name,
+        pos: p.position,
+        team: p.team,
+        adp: p.sleeper_adp,
+        survival_to_next_pick_pct: Math.round(c.survivalToNext * 100),
+        is_cliff_risk: c.isCliffRisk,
+        stances: c.signatureStances,
+        expert_database_takes: takesSummary.slice(0, 180)
+      };
+    });
 
     const promptPayload = {
-      system_role: "You are the FantasyPoints AI Chief Draft Strategist. You provide sharp, decisive, high-IQ draft recommendations combining Scott Barrett and John Hansen analytics with mathematical turn lookahead.",
+      system_role: "You are the FantasyPoints AI Chief Draft Strategist. You provide decisive, high-IQ draft recommendations grounded strictly in Scott Barrett and John Hansen analytics and the provided FantasyPoints database. Do NOT hallucinate generic web takes or make assumptions outside the provided expert quotes.",
+      user_draft_strategy_rules: "Strict anti-early-QB policy in Rounds 1-3. Deprioritize early TEs in Rounds 1-3 except elite targets Brock Bowers and Trey McBride.",
       draft_state: {
         current_pick: turnsInfo.currentPickNo,
         current_round: turnsInfo.currentRound,
@@ -1915,7 +1945,7 @@ document.addEventListener('DOMContentLoaded', () => {
         strategy_mode: aiStrategyMode
       },
       top_available_players: candidatesPayload,
-      task: "Give a 2 to 3 sentence tactical draft recommendation. Specify: 1) Who to pick and why (referencing analyst takes or tier value), 2) What to do at the next pick based on survival odds, and 3) One backup pivot."
+      task: "Give a 2 to 3 sentence tactical draft recommendation. Specify: 1) Who to pick and why (citing specific Scott Barrett or John Hansen takes from the database), 2) What to do at the next pick based on survival odds, and 3) One backup pivot."
     };
 
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${aiModel}:generateContent?key=${geminiApiKey}`;
