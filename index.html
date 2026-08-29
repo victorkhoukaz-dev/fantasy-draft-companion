@@ -11,7 +11,7 @@
   
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=2.2">
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(function(registrations) {
@@ -36,10 +36,10 @@
         <h1 class="brand-title">🏈 FantasyPoints</h1>
         
         <div class="platform-mode-switcher" id="platformModeSwitcher" role="radiogroup" aria-label="Draft Platform Mode">
-          <button class="mode-switch-btn active" id="btnModeRedraft" data-mode="redraft" title="Switch to Sleeper 1.0 PPR Redraft">
+          <button class="mode-switch-btn active" id="btnModeRedraft" data-mode="redraft" onclick="window.switchDraftPlatform && window.switchDraftPlatform('redraft')" title="Switch to Sleeper 1.0 PPR Redraft">
             <span>🏈 Redraft</span>
           </button>
-          <button class="mode-switch-btn" id="btnModeUnderdog" data-mode="underdog" title="Switch to Underdog 0.5 PPR Best Ball (18-Round)">
+          <button class="mode-switch-btn" id="btnModeUnderdog" data-mode="underdog" onclick="window.switchDraftPlatform && window.switchDraftPlatform('underdog')" title="Switch to Underdog 0.5 PPR Best Ball (18-Round)">
             <span>🐶 Best Ball</span>
           </button>
         </div>
@@ -353,6 +353,6 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=2.2"></script>
 </body>
 </html>

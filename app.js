@@ -185,19 +185,43 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Wire Platform Mode Switchers
+  const modeSwitcherContainer = document.getElementById('platformModeSwitcher');
+  if (modeSwitcherContainer) {
+    modeSwitcherContainer.addEventListener('click', (e) => {
+      const btn = e.target.closest('.mode-switch-btn');
+      if (btn) {
+        const targetMode = btn.getAttribute('data-mode');
+        if (targetMode && targetMode !== currentPlatformMode) {
+          console.log('Switching platform mode to:', targetMode);
+          loadPlatformData(targetMode);
+        }
+      }
+    });
+  }
+
   if (btnModeRedraft) {
-    btnModeRedraft.addEventListener('click', () => {
+    btnModeRedraft.addEventListener('click', (e) => {
+      e.preventDefault();
       if (currentPlatformMode !== 'redraft') {
         loadPlatformData('redraft');
       }
     });
   }
   if (btnModeUnderdog) {
-    btnModeUnderdog.addEventListener('click', () => {
+    btnModeUnderdog.addEventListener('click', (e) => {
+      e.preventDefault();
       if (currentPlatformMode !== 'underdog') {
         loadPlatformData('underdog');
       }
     });
+  }
+
+  if (typeof window !== 'undefined') {
+    window.switchDraftPlatform = function(mode) {
+      if (mode && mode !== currentPlatformMode) {
+        loadPlatformData(mode);
+      }
+    };
   }
 
   updateSidebarVisibility();
@@ -642,9 +666,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Update Rank Source Dropdown State (Disable other authors on ALL / DECK tabs)
     const isGlobalView = (currentPosFilter === 'ALL' || currentPosFilter === 'DECK');
-    if (authorFilterSelect) {
+    if (authorFilterSelect && authorFilterSelect.options) {
       Array.from(authorFilterSelect.options).forEach(opt => {
-        if (opt.value !== 'Consensus') {
+        if (opt && opt.value !== 'Consensus') {
           opt.disabled = isGlobalView;
         }
       });
