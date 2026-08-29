@@ -10,7 +10,6 @@ players_dict = adp_data.get('players', {})
 for p in players_dict.values():
     full_name = p['full_name']
     
-    # Generate variations
     clean_name = full_name.replace("'", "").replace("’", "").replace(".", "").strip()
     no_suffix = full_name.replace(" Jr.", "").replace(" Jr", "").replace(" III", "").replace(" II", "").strip()
     
@@ -51,10 +50,12 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     syncStatusEl.id = 'fp-ud-sync-badge';
     syncStatusEl.style.cssText = 'position: fixed; bottom: 16px; right: 16px; z-index: 9999999; background: #0f172a; border: 1px solid #10b981; color: #6ee7b7; padding: 7px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,0.6); display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; transition: all 0.2s ease;';
     syncStatusEl.innerHTML = '<span>🟢</span><span>FantasyPoints: Active</span>';
-    syncStatusEl.title = 'Click to inspect detected picks in console';
+    syncStatusEl.title = 'Click to inspect detected picks and username';
     
     syncStatusEl.addEventListener('click', () => {{
       const picks = parseDraftPicks();
+      const username = getLoggedInUsername();
+      console.log('[FantasyPoints Relay] Username detected:', username);
       console.log('[FantasyPoints Relay] Current Detected Picks (' + picks.length + '):', picks);
       if (picks.length > 0) console.table(picks);
     }});
@@ -69,6 +70,32 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
 
   function normalize(str) {{
     return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  }}
+
+  function getLoggedInUsername() {{
+    try {{
+      // 1. Look for account avatar / header button
+      const userNav = document.querySelector('[data-testid*="user"], [class*="UserMenu"], [class*="user-menu"], [class*="Header_username"], [class*="ProfileButton"], [aria-label*="Account"], [aria-label*="Profile"]');
+      if (userNav) {{
+        const text = (userNav.innerText || userNav.getAttribute('aria-label') || '').trim();
+        if (text && text.length > 1 && !text.includes('Sign') && !text.includes('Log')) {{
+          return text.replace(/Account/i, '').replace(/Profile/i, '').trim().toLowerCase();
+        }}
+      }}
+      // 2. Scan localStorage for auth / session username
+      for (let i = 0; i < localStorage.length; i++) {{
+        const k = localStorage.key(i);
+        if (k && (k.includes('user') || k.includes('auth') || k.includes('session') || k.includes('profile'))) {{
+          try {{
+            const val = JSON.parse(localStorage.getItem(k));
+            if (val && val.username) return val.username.toLowerCase();
+            if (val && val.user && val.user.username) return val.user.username.toLowerCase();
+            if (val && val.handle) return val.handle.toLowerCase();
+          }} catch(e) {{}}
+        }}
+      }}
+    }} catch(e) {{}}
+    return null;
   }}
 
   function isInsideAvailableQueue(el) {{
@@ -91,10 +118,56 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     return false;
   }}
 
+  function isUserElement(el, username) {{
+    if (!el) return false;
+    let cur = el;
+    let depth = 0;
+    while (cur && cur !== document.body && depth < 8) {{
+      const text = (cur.innerText || cur.textContent || '');
+      const cls = (typeof cur.className === 'string' ? cur.className : '').toLowerCase();
+      const testId = (cur.getAttribute && cur.getAttribute('data-testid') || '').toLowerCase();
+      const aria = (cur.getAttribute && cur.getAttribute('aria-label') || '').toLowerCase();
+
+      if (
+        text.includes('(You)') || text.includes('(YOU)') || text.includes('YOU') || 
+        text.includes('My Team') || text.includes('Your Pick') ||
+        cls.includes('user-pick') || cls.includes('mypick') || cls.includes('is-user') ||
+        cls.includes('isuser') || cls.includes('my-team') || cls.includes('owner') ||
+        cls.includes('highlight') || cls.includes('selected') ||
+        testId.includes('my-pick') || testId.includes('user-pick') || aria.includes('my team') ||
+        aria.includes('your pick') || aria.includes('you')
+      ) {{
+        return true;
+      }}
+
+      if (username && username.length > 2) {{
+        if (text.toLowerCase().includes(username) || cls.includes(username)) {{
+          return true;
+        }}
+      }}
+
+      // Check for user-highlighted border color
+      try {{
+        const style = window.getComputedStyle ? window.getComputedStyle(cur) : null;
+        if (style) {{
+          const border = style.borderColor || '';
+          if (border.includes('234, 179, 8') || border.includes('250, 204, 21') || border.includes('16, 185, 129') || border.includes('rgb(255, 230,') || border.includes('rgb(254, 240,')) {{
+            return true;
+          }}
+        }}
+      }} catch(e) {{}}
+
+      cur = cur.parentElement;
+      depth++;
+    }}
+    return false;
+  }}
+
   function parseDraftPicks() {{
     try {{
       const picks = [];
       const seenKeys = new Set();
+      const username = getLoggedInUsername();
       
       // Target elements strictly inside the draft board / completed pick cells
       const boardCells = document.querySelectorAll(
@@ -104,7 +177,6 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
       const targetElements = (boardCells.length > 0) ? boardCells : document.querySelectorAll('[class*="cell"], [class*="Cell"], [class*="card"], [class*="Card"], [class*="tile"], [class*="Tile"], div');
 
       targetElements.forEach(el => {{
-        // Exclude elements inside the available player queue/rankings list!
         if (isInsideAvailableQueue(el)) return;
         if (el.children.length > 6) return;
 
@@ -125,7 +197,7 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
             if (!seenKeys.has(key)) {{
               seenKeys.add(key);
               
-              const isUser = text.includes('YOU') || text.includes('My Team') || el.classList.contains('is-user') || el.classList.contains('user-pick') || (el.parentElement && el.parentElement.classList.contains('user-pick'));
+              const isUser = isUserElement(el, username);
 
               picks.push({{
                 pick_no: picks.length + 1,
@@ -183,7 +255,8 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
 
       if (syncStatusEl) {{
         if (picks.length > 0) {{
-          syncStatusEl.innerHTML = '<span>🟢</span><span>FantasyPoints: Syncing (#' + picks.length + ' picks)</span>';
+          const userPicksCount = picks.filter(p => p.is_user).length;
+          syncStatusEl.innerHTML = '<span>🟢</span><span>FantasyPoints: Syncing (#' + picks.length + ' picks' + (userPicksCount > 0 ? ', ' + userPicksCount + ' mine' : '') + ')</span>';
           syncStatusEl.style.borderColor = '#10b981';
         }} else {{
           syncStatusEl.innerHTML = '<span>🟡</span><span>FantasyPoints: Relay Ready</span>';
@@ -221,4 +294,4 @@ out_path = os.path.join(os.getcwd(), 'underdog-extension', 'content.js')
 with open(out_path, 'w', encoding='utf-8') as f:
     f.write(content_js_template)
 
-print(f"Generated clean queue-filtered {out_path} successfully!")
+print(f"Generated enhanced user-detecting {out_path} successfully!")

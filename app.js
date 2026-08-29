@@ -2042,10 +2042,12 @@ document.addEventListener('DOMContentLoaded', () => {
           hasNewPicks = true;
         }
       } else {
-        if (!otherDraftedPlayers.has(canonicalKey)) {
-          otherDraftedPlayers.add(canonicalKey);
-          myRosterPlayers.delete(canonicalKey);
-          hasNewPicks = true;
+        // Only mark as other drafted if not already on MY roster!
+        if (!myRosterPlayers.has(canonicalKey)) {
+          if (!otherDraftedPlayers.has(canonicalKey)) {
+            otherDraftedPlayers.add(canonicalKey);
+            hasNewPicks = true;
+          }
         }
       }
     });
