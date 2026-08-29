@@ -92,10 +92,11 @@ def parse_csv_file(file_path: str) -> List[Dict[str, Any]]:
     with open(file_path, "r", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            # Handle various header styles
-            first_name = row.get("first_name") or row.get("firstName") or ""
-            last_name = row.get("last_name") or row.get("lastName") or ""
-            raw_name = row.get("player") or row.get("Player") or row.get("name") or row.get("Name") or ""
+            # Case-insensitive row lookup
+            clean_row = {k.strip().lower(): v for k, v in row.items() if k}
+            first_name = clean_row.get("first_name") or clean_row.get("firstname") or ""
+            last_name = clean_row.get("last_name") or clean_row.get("lastname") or ""
+            raw_name = clean_row.get("name") or clean_row.get("player") or clean_row.get("player_name") or ""
             
             if not raw_name and (first_name or last_name):
                 raw_name = f"{first_name} {last_name}".strip()
@@ -103,10 +104,10 @@ def parse_csv_file(file_path: str) -> List[Dict[str, Any]]:
             if not raw_name:
                 continue
 
-            pos = row.get("slot_name") or row.get("slotName") or row.get("pos") or row.get("POS") or row.get("position") or row.get("Position") or ""
-            team = row.get("team_name") or row.get("teamName") or row.get("team") or row.get("TEAM") or row.get("Team") or ""
-            adp_val = row.get("adp") or row.get("ADP") or row.get("Adp") or row.get("overall_rank") or row.get("Rank") or "300"
-            bye_val = row.get("bye_week") or row.get("byeWeek") or row.get("bye") or row.get("Bye") or ""
+            pos = clean_row.get("pos") or clean_row.get("position") or clean_row.get("slot_name") or clean_row.get("slotname") or ""
+            team = clean_row.get("team") or clean_row.get("team_name") or clean_row.get("teamname") or ""
+            adp_val = clean_row.get("adp") or clean_row.get("overall") or clean_row.get("rank") or clean_row.get("overall_rank") or "300"
+            bye_val = clean_row.get("bye") or clean_row.get("bye_week") or clean_row.get("byeweek") or ""
 
             try:
                 exact_adp = float(str(adp_val).strip())

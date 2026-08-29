@@ -522,6 +522,8 @@ def parse_csv_rankings(raw_dir):
     for csv_path in csv_files:
         filename = os.path.basename(csv_path)
         author = "FantasyPoints Staff"
+        is_underdog_csv = "underdog" in filename.lower() or "best-ball" in filename.lower()
+        
         if "barrett" in filename.lower():
             author = "Scott Barrett"
         elif "hansen" in filename.lower():
@@ -531,21 +533,29 @@ def parse_csv_rankings(raw_dir):
             with open(csv_path, "r", encoding="utf-8-sig") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    rank = row.get("RANK") or row.get("Rank") or row.get("rank")
-                    name = row.get("NAME") or row.get("Name") or row.get("Player")
-                    pos = row.get("Position") or row.get("POS") or row.get("pos")
-                    team = row.get("Team") or row.get("TEAM") or "NFL"
-                    tier = row.get("TIER") or row.get("Tier") or ""
+                    clean_row = {k.strip().lower(): v for k, v in row.items() if k}
                     
-                    exodia = row.get("EXODIA") or row.get("Exodia") or ""
-                    target = row.get("TARGET") or row.get("Target") or ""
+                    name = clean_row.get("name") or clean_row.get("player") or clean_row.get("player_name") or ""
+                    pos = clean_row.get("pos") or clean_row.get("position") or ""
+                    team = clean_row.get("team") or "NFL"
+                    
+                    rank = clean_row.get("overall") or clean_row.get("rank") or clean_row.get("adp") or ""
+                    tier = clean_row.get("tier") or ""
+                    exodia = clean_row.get("exodia") or ""
+                    target = clean_row.get("target") or ""
+                    adp_str = clean_row.get("adp") or ""
+
+                    # Special check: in Best Ball CSV, "position" column holds 'RB1', 'WR2', etc.
+                    pos_rank_explicit = ""
+                    if "position" in clean_row and clean_row["position"] != pos:
+                        pos_rank_explicit = clean_row["position"].strip()
 
                     if not (rank and name and pos):
                         continue
                     
                     pos = pos.upper().strip()
                     rank_str = str(rank).strip()
-                    pos_rank = f"{pos}{rank_str}"
+                    pos_rank = pos_rank_explicit if pos_rank_explicit else f"{pos}{rank_str}"
 
                     stance = "Bullish"
                     if str(exodia).lower() in ["true", "1", "exodia", "yes"]:
@@ -555,8 +565,15 @@ def parse_csv_rankings(raw_dir):
                     elif author == "Scott Barrett" and str(target).lower() in ["true", "1", "target", "yes"]:
                         stance = "Must-Draft"
 
-                    is_top200 = "top-200" in filename.lower()
+                    is_top200 = "top-200" in filename.lower() or is_underdog_csv
                     overall_num = int(rank_str) if (is_top200 and rank_str.isdigit()) else None
+
+                    if is_underdog_csv:
+                        key_reason = f"Official FantasyPoints Underdog Best Ball Rank #{rank_str} ({pos_rank})"
+                        upside_metric = f"Underdog ADP: {adp_str}" if adp_str else f"Best Ball Rank #{rank_str}"
+                    else:
+                        key_reason = f"Official {author} Top-200 Overall Rank #{rank_str}" if is_top200 else (f"Official {author} positional ranking: {pos_rank} (Tier {tier})" if tier else f"Official {author} positional ranking: {pos_rank}")
+                        upside_metric = f"Official {author} Rank #{rank_str}"
 
                     take = {
                         "player_name": name.strip(),
@@ -565,10 +582,10 @@ def parse_csv_rankings(raw_dir):
                         "author": author,
                         "stance": stance,
                         "target_round_advice": f"Tier {tier}" if tier else "",
-                        "key_reason": f"Official {author} Top-200 Overall Rank #{rank_str}" if is_top200 else (f"Official {author} positional ranking: {pos_rank} (Tier {tier})" if tier else f"Official {author} positional ranking: {pos_rank}"),
-                        "upside_metric": f"Official {author} Rank #{rank_str}",
+                        "key_reason": key_reason,
+                        "upside_metric": upside_metric,
                         "risk_factor": "",
-                        "fp_pos_rank": None if is_top200 else pos_rank,
+                        "fp_pos_rank": None if is_top200 and not pos_rank_explicit else pos_rank,
                         "fp_overall_rank": overall_num,
                         "is_official_ranking": True,
                         "source_file": filename
