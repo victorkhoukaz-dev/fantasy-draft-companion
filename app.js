@@ -1970,6 +1970,92 @@ document.addEventListener('DOMContentLoaded', () => {
     updateDraftSyncBadgeUI();
   }
 
+  // ==========================================================================
+  // 🐶 UNDERDOG FANTASY LIVE DRAFT BROADCAST RECEIVER
+  // ==========================================================================
+  let underdogChannel = null;
+  let isUnderdogRelayConnected = false;
+
+  if (typeof BroadcastChannel !== 'undefined') {
+    underdogChannel = new BroadcastChannel('underdog-sync');
+    
+    // Request initial draft sync state from open Underdog tabs
+    setTimeout(() => {
+      if (underdogChannel) {
+        underdogChannel.postMessage({ type: 'REQUEST_UNDERDOG_SYNC' });
+      }
+    }, 1200);
+
+    underdogChannel.onmessage = (event) => {
+      const data = event.data;
+      if (data && data.type === 'UNDERDOG_PICKS_SYNC' && Array.isArray(data.picks)) {
+        handleIncomingUnderdogPicks(data);
+      }
+    };
+  }
+
+  function handleIncomingUnderdogPicks(data) {
+    isUnderdogRelayConnected = true;
+    const picks = data.picks;
+    if (!picks || picks.length === 0) return;
+
+    if (currentPlatformMode !== 'underdog') {
+      currentPlatformMode = 'underdog';
+      localStorage.setItem('fp_platform_mode', 'underdog');
+      loadPlatformData('underdog');
+    }
+
+    let hasNewPicks = false;
+
+    picks.forEach(p => {
+      const canonicalKey = getCanonicalNameKey(p.player_name);
+      if (!canonicalKey) return;
+
+      // Register player in groupedPlayersMap if not present yet
+      if (!groupedPlayersMap.has(canonicalKey)) {
+        groupedPlayersMap.set(canonicalKey, {
+          canonical_key: canonicalKey,
+          player_name: p.player_name,
+          position: p.position || 'FLEX',
+          team: 'NFL',
+          sleeper_adp: 999,
+          pos_rank: '—',
+          pos_num: 99,
+          raw_takes: [],
+          author_takes_map: new Map(),
+          author_pos_ranks: new Map()
+        });
+      }
+
+      if (p.is_user) {
+        if (!myRosterPlayers.has(canonicalKey)) {
+          myRosterPlayers.add(canonicalKey);
+          otherDraftedPlayers.delete(canonicalKey);
+          hasNewPicks = true;
+        }
+      } else {
+        if (!otherDraftedPlayers.has(canonicalKey)) {
+          otherDraftedPlayers.add(canonicalKey);
+          myRosterPlayers.delete(canonicalKey);
+          hasNewPicks = true;
+        }
+      }
+    });
+
+    if (hasNewPicks) {
+      localStorage.setItem('fp_my_roster_underdog', JSON.stringify(Array.from(myRosterPlayers)));
+      localStorage.setItem('fp_other_drafted_underdog', JSON.stringify(Array.from(otherDraftedPlayers)));
+      renderPlayerBoard();
+    }
+
+    // Update Header sync indicator
+    if (openDraftSyncBtn && draftSyncLabel) {
+      openDraftSyncBtn.classList.add('syncing');
+      if (draftSyncIcon) draftSyncIcon.textContent = '🐶';
+      draftSyncLabel.textContent = `UD Live: #${picks.length}`;
+    }
+  }
+
   // Draft Sync Modal & Button Event Listeners
   if (openDraftSyncBtn) {
     openDraftSyncBtn.addEventListener('click', () => {

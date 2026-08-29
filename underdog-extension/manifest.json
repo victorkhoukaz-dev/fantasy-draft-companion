@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "FantasyPoints Underdog Draft Relay",
+  "version": "1.0.0",
+  "description": "Seamless real-time pick sync between Underdog Fantasy draft rooms and FantasyPoints Draft Companion.",
+  "icons": {
+    "128": "icon-128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://underdogfantasy.com/*",
+        "*://*.underdogfantasy.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "*://*.underdogfantasy.com/*"
+  ]
+}

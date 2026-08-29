@@ -11,7 +11,7 @@
   
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=2.6">
+  <link rel="stylesheet" href="styles.css?v=2.7">
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(function(registrations) {
@@ -263,6 +263,24 @@
         </div>
 
         <div id="draftSyncStatusMsg" style="margin-top: 12px; font-size: 0.82rem; text-align: center; color: #94a3b8;"></div>
+
+        <!-- Underdog Live Relay Card -->
+        <div id="underdogSyncCard" style="margin-top: 14px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(234, 179, 8, 0.35); border-radius: var(--radius-md); padding: 12px 14px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+            <strong style="font-size: 0.85rem; color: #fde68a; display: flex; align-items: center; gap: 6px;">
+              🐶 Underdog Fantasy Live Relay
+            </strong>
+            <span id="udRelayStatusBadge" style="font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 10px; background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.4);">
+              🟢 Relay Ready
+            </span>
+          </div>
+          <p style="font-size: 0.75rem; color: #cbd5e1; margin: 0 0 8px 0; line-height: 1.4;">
+            To auto-sync your Underdog drafts in real-time, load the lightweight extension in Chrome (<code>chrome://extensions</code> &rarr; <em>Load unpacked</em> &rarr; <code>underdog-extension</code> folder).
+          </p>
+          <div style="font-size: 0.72rem; color: #94a3b8;">
+            ⚡ As you draft on Underdog, all picks automatically sync into this companion tab in real-time.
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -353,6 +371,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=2.6"></script>
+  <script src="app.js?v=2.7"></script>
 </body>
 </html>
