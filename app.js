@@ -2291,13 +2291,15 @@ document.addEventListener('DOMContentLoaded', () => {
       if (counts.WR >= 9) {
         urgency.WR = 0.05; // Hard cap at 9 WRs
       } else if (counts.WR >= 7) {
-        urgency.WR = 0.45; // Already has 7 WRs
+        urgency.WR = 0.30; // 7+ WRs: severe saturation
       } else if (counts.WR >= 5) {
-        urgency.WR = 0.75; // Already has 5 WRs, balance with RB/QB/TE!
+        urgency.WR = 0.55; // 5-6 WRs: strongly pivot to RBs/QBs/TEs
       } else if (counts.WR >= 4) {
-        urgency.WR = 0.90;
-      } else if (currentRound <= 5) {
-        urgency.WR = 1.25; // Building initial WR foundation
+        urgency.WR = 0.75; // 4 WRs: start prioritizing other positions
+      } else if (counts.WR >= 3) {
+        urgency.WR = 0.90; // 3 WRs: neutral/balanced
+      } else {
+        urgency.WR = 1.00; // 0-2 WRs: completely neutral 1.0 (strict BPA by ADP/rankings!)
       }
 
       return { counts, urgency, byeMap, structure };
