@@ -2273,26 +2273,31 @@ document.addEventListener('DOMContentLoaded', () => {
         urgency.TE = 1.50;
       }
 
-      // Best Ball RB Urgency based on Archetype
+      // Best Ball RB Urgency based on Roster State
       if (counts.RB >= structure.targets.RB) {
         urgency.RB = 0.05; // Hard cap on RBs
       } else if (structure.earlyRBsCount >= 2) {
-        // Dual Anchor: Pause on RBs in mid rounds
-        if (currentRound >= 3 && currentRound <= 8 && counts.RB >= 2) urgency.RB = 0.35;
+        // Dual Anchor: 2 early RBs drafted, pause in rounds 3-7
+        if (currentRound >= 3 && currentRound <= 7 && counts.RB >= 2) urgency.RB = 0.40;
       } else if (structure.earlyRBsCount === 1) {
-        // Hero RB: Do not draft RB in rounds 3-7
-        if (currentRound >= 3 && currentRound <= 7) urgency.RB = 0.30;
-      } else if (structure.earlyRBsCount === 0) {
-        // Zero RB: Avoid R1-R5, surge in R7+
-        if (currentRound <= 5) urgency.RB = 0.20;
-        else if (currentRound >= 7 && counts.RB < structure.targets.RB) urgency.RB = 1.85;
+        // Hero RB: 1 anchor RB drafted, pause in rounds 3-7
+        if (currentRound >= 3 && currentRound <= 7) urgency.RB = 0.35;
+      } else if (counts.RB === 0 && counts.WR >= 3) {
+        // Zero RB: If you drafted 3+ WRs and 0 RBs by round 4+
+        if (currentRound >= 6) urgency.RB = 1.80; // Surge in rounds 6+ to draft 5-6 high-upside RBs!
       }
 
-      // Best Ball WR Dominance in Rounds 1-8
+      // Best Ball WR Urgency & Saturation Dampening
       if (counts.WR >= 9) {
         urgency.WR = 0.05; // Hard cap at 9 WRs
-      } else if (currentRound <= 8 && counts.WR < 5) {
-        urgency.WR = 1.40;
+      } else if (counts.WR >= 7) {
+        urgency.WR = 0.45; // Already has 7 WRs
+      } else if (counts.WR >= 5) {
+        urgency.WR = 0.75; // Already has 5 WRs, balance with RB/QB/TE!
+      } else if (counts.WR >= 4) {
+        urgency.WR = 0.90;
+      } else if (currentRound <= 5) {
+        urgency.WR = 1.25; // Building initial WR foundation
       }
 
       return { counts, urgency, byeMap, structure };
@@ -2390,8 +2395,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // 5. Early Round Positional Strategy Rules (Rounds 1-3)
     if (turnsInfo.currentRound <= 3) {
       if (player.position === 'QB') {
-        // Strict anti-early QB unless elite mobile rushing QB
-        score *= 0.45;
+        if (currentPlatformMode === 'underdog') {
+          const isEliteMobileQb = (player.canonical_key === 'joshallen' || player.canonical_key === 'lamarjackson' || player.canonical_key === 'jaydendaniels' || player.canonical_key === 'jalenhurts');
+          if (!isEliteMobileQb) {
+            score *= 0.55;
+          }
+        } else {
+          score *= 0.45;
+        }
       } else if (player.position === 'TE') {
         const isAllowedEliteTe = (player.canonical_key === 'brockbowers' || player.canonical_key === 'treymcbride');
         if (!isAllowedEliteTe) {
@@ -3213,7 +3224,10 @@ document.addEventListener('DOMContentLoaded', () => {
     window._testHooks = {
       evaluateBestBallRosterStructure,
       computeRosterStackContext,
-      getPlayerStackBadge
+      getPlayerStackBadge,
+      evaluateRosterNeeds,
+      evaluateCandidateScore,
+      groupedPlayersMap
     };
   }
 });
