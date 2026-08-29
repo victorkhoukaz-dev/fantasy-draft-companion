@@ -201,9 +201,9 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     }}
   }}
 
-  // Safe 1.5s interval
-  setInterval(tick, 1500);
-  setTimeout(tick, 1000);
+  // Fast 800ms interval for live 20-second fast draft responsiveness
+  setInterval(tick, 800);
+  setTimeout(tick, 500);
 
   // Listen for sync ping from companion
   if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {{
