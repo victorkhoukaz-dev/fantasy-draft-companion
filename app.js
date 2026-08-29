@@ -719,6 +719,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     let visibleCount = 0;
+    const stackContext = computeRosterStackContext(myRosterPlayers, groupedPlayersMap);
 
     playersArray.forEach((player) => {
       const isDraftedMe = myRosterPlayers.has(player.canonical_key);
@@ -726,7 +727,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       visibleCount++;
 
-      const row = createCompactPlayerRow(player, isDraftedMe, isDraftedOther);
+      const row = createCompactPlayerRow(player, isDraftedMe, isDraftedOther, stackContext);
       playerGrid.appendChild(row);
     });
 
@@ -913,8 +914,134 @@ document.addEventListener('DOMContentLoaded', () => {
     return signature;
   }
 
+  // Helper: Compute Bi-Directional Stacking & Team Correlation Context
+  function computeRosterStackContext(myRosterKeys, playersMap) {
+    const teamQBs = new Map(); // team -> [Player]
+    const teamPassCatchers = new Map(); // team -> [Player]
+    const teamRBs = new Map(); // team -> [Player]
+    const allDraftedByTeam = new Map(); // team -> [Player]
+
+    myRosterKeys.forEach(k => {
+      const p = playersMap.get(k);
+      if (!p || !p.team || p.team === 'NFL') return;
+      
+      if (!allDraftedByTeam.has(p.team)) allDraftedByTeam.set(p.team, []);
+      allDraftedByTeam.get(p.team).push(p);
+
+      if (p.position === 'QB') {
+        if (!teamQBs.has(p.team)) teamQBs.set(p.team, []);
+        teamQBs.get(p.team).push(p);
+      } else if (p.position === 'WR' || p.position === 'TE') {
+        if (!teamPassCatchers.has(p.team)) teamPassCatchers.set(p.team, []);
+        teamPassCatchers.get(p.team).push(p);
+      } else if (p.position === 'RB') {
+        if (!teamRBs.has(p.team)) teamRBs.set(p.team, []);
+        teamRBs.get(p.team).push(p);
+      }
+    });
+
+    return { teamQBs, teamPassCatchers, teamRBs, allDraftedByTeam };
+  }
+
+  // Helper: Get Stacking Badge for any Player on the Board
+  function getPlayerStackBadge(player, stackContext) {
+    if (!stackContext || currentPlatformMode !== 'underdog' || !player.team || player.team === 'NFL') return null;
+
+    const team = player.team;
+    const qbs = stackContext.teamQBs.get(team) || [];
+    const passCatchers = stackContext.teamPassCatchers.get(team) || [];
+
+    // 1. If player is a QB: Check if we drafted WR/TE from this team!
+    if (player.position === 'QB') {
+      if (passCatchers.length > 0) {
+        const names = passCatchers.map(pc => pc.player_name.split(' ').pop()).join(' & ');
+        return {
+          label: `⚡ Stack (${team}: ${names})`,
+          type: 'Stack'
+        };
+      }
+    }
+
+    // 2. If player is WR or TE: Check if we drafted QB from this team (or partner pass-catchers)!
+    if (player.position === 'WR' || player.position === 'TE') {
+      if (qbs.length > 0) {
+        const qbName = qbs[0].player_name.split(' ').pop();
+        return {
+          label: `⚡ Stack (QB: ${qbName})`,
+          type: 'Stack'
+        };
+      } else if (passCatchers.length > 0) {
+        const names = passCatchers.map(pc => pc.player_name.split(' ').pop()).join(' & ');
+        return {
+          label: `⚡ ${team} Partner (${names})`,
+          type: 'Stack-Partner'
+        };
+      }
+    }
+
+    // 3. If player is RB: Check if we drafted the QB
+    if (player.position === 'RB' && qbs.length > 0) {
+      return {
+        label: `⚡ ${team} Offense`,
+        type: 'Stack-Partner'
+      };
+    }
+
+    return null;
+  }
+
+  // Helper: Best Ball Roster Construction & Strategy Guide Evaluator
+  function evaluateBestBallRosterStructure(myPlayersList) {
+    const posCounts = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    myPlayersList.forEach(p => {
+      posCounts[p.position] = (posCounts[p.position] || 0) + 1;
+    });
+
+    const hasEliteQB = myPlayersList.some(p => p.position === 'QB' && (p.sleeper_adp < 75 || p.exact_adp < 75));
+    const hasEliteTE = myPlayersList.some(p => p.position === 'TE' && (p.sleeper_adp < 60 || p.exact_adp < 60));
+    const earlyRBsCount = myPlayersList.filter(p => p.position === 'RB' && (p.sleeper_adp < 36 || p.exact_adp < 36)).length;
+
+    // Dynamic Positional Targets based on Underdog Strategy Guide
+    const targetQB = hasEliteQB ? 2 : 3;
+    const targetTE = hasEliteTE ? 2 : 3;
+    let targetRB = 5;
+    if (earlyRBsCount >= 2) targetRB = 5;
+    else if (earlyRBsCount === 1) targetRB = 5;
+    else targetRB = 6; // Zero RB needs 6-7
+
+    const targetWR = Math.max(7, 18 - targetQB - targetTE - targetRB);
+
+    // Detected Archetype & Tactical Roster Strategy Advice
+    let archetype = '🎯 Best Ball Build';
+    let archetypeAdvice = 'Target 7-9 WRs, 2-3 QBs, and 2-3 TEs. Build correlation with your QBs.';
+
+    if (earlyRBsCount === 0 && myPlayersList.length >= 3) {
+      archetype = '🚫 ZERO-RB BUILD';
+      archetypeAdvice = '0 early RBs. Target 6-7 high-upside RBs in Rds 7-15. Hammer elite WR depth & stacks now.';
+    } else if (earlyRBsCount === 1) {
+      archetype = '🦸 HERO-RB BUILD';
+      archetypeAdvice = 'Anchor locked in. Do not draft RB in Rds 3-7. Hammer WRs, locked QB & TE.';
+    } else if (earlyRBsCount >= 2) {
+      archetype = '⚓ DUAL ANCHOR RB';
+      archetypeAdvice = '2 early RBs locked. Hard cap at 5 RBs max. Shift all capital to WR volume & stacks.';
+    } else if (hasEliteQB && hasEliteTE) {
+      archetype = '👑 HYPER-FRAGILE';
+      archetypeAdvice = 'Elite QB + TE secured. Cap QB at 2 and TE at 2. Devote remaining picks to WR and RB.';
+    }
+
+    return {
+      posCounts,
+      targets: { QB: targetQB, RB: targetRB, WR: targetWR, TE: targetTE },
+      hasEliteQB,
+      hasEliteTE,
+      earlyRBsCount,
+      archetype,
+      archetypeAdvice
+    };
+  }
+
   // Create Compact Tabular Row
-  function createCompactPlayerRow(player, isDraftedMe, isDraftedOther) {
+  function createCompactPlayerRow(player, isDraftedMe, isDraftedOther, stackContext) {
     const row = document.createElement('div');
     const isDrafted = isDraftedMe || isDraftedOther;
 
@@ -935,6 +1062,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const signatureStances = getSignatureStances(player);
 
     const stancePills = [];
+
+    // Best Ball Stacking Pill (Top Priority in Underdog mode)
+    if (stackContext && currentPlatformMode === 'underdog') {
+      const stackBadge = getPlayerStackBadge(player, stackContext);
+      if (stackBadge) {
+        stancePills.push(`<span class="badge-stance ${stackBadge.type}">${escapeHtml(stackBadge.label)}</span>`);
+      }
+    }
+
     signatureStances.forEach(sig => {
       const cssClass = sig.replace(/['’\s]/g, '-');
       stancePills.push(`<span class="badge-stance ${cssClass}">${getIconForStance(sig)} ${sig}</span>`);
@@ -1124,12 +1260,78 @@ document.addEventListener('DOMContentLoaded', () => {
       if (p) myPlayersList.push(p);
     });
 
-    if (myPlayersList.length === 0) {
-      sidebarRosterList.innerHTML = `
-        <div style="font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 20px 0;">
-          No players drafted yet.<br>Click "ME" on player rows to build your roster!
+    // In Underdog Best Ball mode: Render Best Ball Structure HUD & Stacks Box
+    if (currentPlatformMode === 'underdog') {
+      const structure = evaluateBestBallRosterStructure(myPlayersList);
+      const stackContext = computeRosterStackContext(myRosterPlayers, groupedPlayersMap);
+
+      // Build Positional Gauge Chips
+      const qbClass = structure.posCounts.QB > structure.targets.QB ? 'over' : (structure.posCounts.QB === structure.targets.QB ? 'optimal' : '');
+      const rbClass = structure.posCounts.RB > structure.targets.RB ? 'over' : (structure.posCounts.RB === structure.targets.RB ? 'optimal' : '');
+      const wrClass = structure.posCounts.WR > structure.targets.WR ? 'optimal' : (structure.posCounts.WR >= 7 ? 'optimal' : '');
+      const teClass = structure.posCounts.TE > structure.targets.TE ? 'over' : (structure.posCounts.TE === structure.targets.TE ? 'optimal' : '');
+
+      const hudEl = document.createElement('div');
+      hudEl.className = 'bb-structure-hud';
+      hudEl.innerHTML = `
+        <div class="bb-hud-header">
+          <span class="bb-hud-title">🐶 Portfolio Structure</span>
+          <span class="bb-archetype-chip">${escapeHtml(structure.archetype)}</span>
+        </div>
+        <div class="bb-pos-gauge-row">
+          <div class="bb-pos-gauge-chip ${qbClass}">
+            <span class="bb-pos-name">QB</span>
+            <span class="bb-pos-val">${structure.posCounts.QB}/${structure.targets.QB}</span>
+          </div>
+          <div class="bb-pos-gauge-chip ${rbClass}">
+            <span class="bb-pos-name">RB</span>
+            <span class="bb-pos-val">${structure.posCounts.RB}/${structure.targets.RB}</span>
+          </div>
+          <div class="bb-pos-gauge-chip ${wrClass}">
+            <span class="bb-pos-name">WR</span>
+            <span class="bb-pos-val">${structure.posCounts.WR}/${structure.targets.WR}</span>
+          </div>
+          <div class="bb-pos-gauge-chip ${teClass}">
+            <span class="bb-pos-name">TE</span>
+            <span class="bb-pos-val">${structure.posCounts.TE}/${structure.targets.TE}</span>
+          </div>
+        </div>
+        <div class="bb-advice-text">
+          💡 ${escapeHtml(structure.archetypeAdvice)}
         </div>
       `;
+      sidebarRosterList.appendChild(hudEl);
+
+      // Find Active Stacks
+      const activeStacks = [];
+      stackContext.allDraftedByTeam.forEach((players, team) => {
+        if (players.length >= 2) {
+          const names = players.map(p => `${p.player_name.split(' ').pop()} (${p.position})`).join(', ');
+          activeStacks.push({ team, count: players.length, names });
+        }
+      });
+
+      if (activeStacks.length > 0) {
+        const stacksBox = document.createElement('div');
+        stacksBox.className = 'bb-stacks-box';
+        stacksBox.innerHTML = `
+          <div class="bb-stacks-title">⚡ Active Stacks (${activeStacks.length})</div>
+          ${activeStacks.map(st => `
+            <div class="bb-stack-item">
+              <strong style="color: #fde68a;">${escapeHtml(st.team)} (${st.count}-Stack):</strong>
+              <span style="font-size: 0.7rem; color: #cbd5e1; margin-left: 6px;">${escapeHtml(st.names)}</span>
+            </div>
+          `).join('')}
+        `;
+        sidebarRosterList.appendChild(stacksBox);
+      }
+    }
+
+    if (myPlayersList.length === 0) {
+      const emptyDiv = document.createElement('div');
+      emptyDiv.style = "font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 20px 0;";
+      emptyDiv.innerHTML = `No players drafted yet.<br>Click "ME" on player rows to build your roster!`;
+      sidebarRosterList.appendChild(emptyDiv);
       if (byeWarningArea) byeWarningArea.style.display = 'none';
       return;
     }
@@ -2799,10 +3001,11 @@ document.addEventListener('DOMContentLoaded', () => {
     connectToSleeperDraft(activeDraftId);
   }
 
-  // Unregister Service Worker to prevent caching issues
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.getRegistrations().then(regs => {
-      regs.forEach(r => r.unregister());
-    });
+  if (typeof window !== 'undefined') {
+    window._testHooks = {
+      evaluateBestBallRosterStructure,
+      computeRosterStackContext,
+      getPlayerStackBadge
+    };
   }
 });

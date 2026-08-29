@@ -780,6 +780,141 @@ select option {
 .badge-stance.FadeConsensus { background: rgba(244, 63, 94, 0.25); color: #fecdd3; border: 1px solid #f43f5e; }
 .badge-stance.Split { background: rgba(245, 158, 11, 0.25); color: #fde68a; border: 1px solid #f59e0b; box-shadow: 0 0 8px rgba(245, 158, 11, 0.3); }
 
+/* Best Ball Stacking & Correlation Badges */
+.badge-stance.Stack, .badge-stance.Stack-Partner {
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.3), rgba(249, 115, 22, 0.35));
+  color: #fef08a;
+  border: 1px solid #eab308;
+  box-shadow: 0 0 10px rgba(234, 179, 8, 0.4);
+  font-weight: 800;
+  animation: stackPulse 2.5s infinite ease-in-out;
+}
+
+@keyframes stackPulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(234, 179, 8, 0.3); }
+  50% { box-shadow: 0 0 14px rgba(234, 179, 8, 0.65); }
+}
+
+/* Best Ball Roster Construction HUD */
+.bb-structure-hud {
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.85));
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.bb-hud-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.bb-hud-title {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #fde68a;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bb-archetype-chip {
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.2);
+  color: #fde68a;
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  text-transform: uppercase;
+}
+
+.bb-pos-gauge-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.bb-pos-gauge-chip {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 4px 2px;
+  text-align: center;
+  font-size: 0.7rem;
+}
+
+.bb-pos-gauge-chip.optimal {
+  border-color: rgba(16, 185, 129, 0.5);
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.bb-pos-gauge-chip.capped {
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.bb-pos-gauge-chip.over {
+  border-color: rgba(244, 63, 94, 0.5);
+  color: #fda4af;
+  background: rgba(244, 63, 94, 0.15);
+}
+
+.bb-pos-name {
+  font-weight: 800;
+  font-size: 0.65rem;
+  color: #94a3b8;
+  display: block;
+}
+
+.bb-pos-val {
+  font-weight: 800;
+  font-size: 0.8rem;
+}
+
+.bb-advice-text {
+  font-size: 0.72rem;
+  color: #e2e8f0;
+  line-height: 1.35;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 6px;
+  margin-top: 6px;
+}
+
+.bb-stacks-box {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(234, 179, 8, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+
+.bb-stacks-title {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #fef08a;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bb-stack-item {
+  font-size: 0.72rem;
+  color: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 0;
+}
+
 .compare-checkbox-label { display: flex; align-items: center; gap: 3px; font-size: 0.7rem; color: var(--text-muted); cursor: pointer; }
 
 /* Card View Grid */
