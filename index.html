@@ -32,8 +32,18 @@
   <!-- Sticky Header Controls -->
   <header class="header-sticky">
     <div class="brand-row">
-      <div style="display: flex; align-items: center; gap: 10px;">
+      <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
         <h1 class="brand-title">🏈 FantasyPoints</h1>
+        
+        <div class="platform-mode-switcher" id="platformModeSwitcher" role="radiogroup" aria-label="Draft Platform Mode">
+          <button class="mode-switch-btn active" id="btnModeRedraft" data-mode="redraft" title="Switch to Sleeper 1.0 PPR Redraft">
+            <span>🏈 Redraft</span>
+          </button>
+          <button class="mode-switch-btn" id="btnModeUnderdog" data-mode="underdog" title="Switch to Underdog 0.5 PPR Best Ball (18-Round)">
+            <span>🐶 Best Ball</span>
+          </button>
+        </div>
+
         <span class="badge-sleeper-live" id="sleeperStatusBadge">🟢 Sleeper ADP: Live</span>
       </div>
 

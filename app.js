@@ -1,15 +1,28 @@
 // Fantasy Football Draft Companion PWA - Production Edition
 document.addEventListener('DOMContentLoaded', () => {
-  // App State
+  // Platform & Mode State
+  let currentPlatformMode = localStorage.getItem('fp_platform_mode') || 'redraft';
   let rawTakesData = [];
   let groupedPlayersMap = new Map(); // canonical_name -> player object
-  let sleeperAdpMap = new Map(); // normalized_name -> { adp, position, team, full_name, pos_rank, pos_num }
+  let sleeperAdpMap = new Map(); // normalized_name -> { adp, exact_adp, position, team, full_name, pos_rank, pos_num }
+  let underdogAdpMap = new Map(); // normalized_name -> { adp, exact_adp, position, team, full_name, pos_rank, pos_num, bye_week }
   
-  let myRosterPlayers = new Set(JSON.parse(localStorage.getItem('fp_my_roster') || '[]'));
-  let otherDraftedPlayers = new Set(JSON.parse(localStorage.getItem('fp_other_drafted') || '[]'));
-  let starredPlayers = new Set(JSON.parse(localStorage.getItem('fp_starred_players') || '[]'));
+  function getStorageKey(key) {
+    return currentPlatformMode === 'underdog' ? `${key}_underdog` : key;
+  }
+
+  let myRosterPlayers = new Set();
+  let otherDraftedPlayers = new Set();
+  let starredPlayers = new Set();
   let selectedForCompare = new Set(); // max 3 player_names
   
+  function loadDraftState() {
+    myRosterPlayers = new Set(JSON.parse(localStorage.getItem(getStorageKey('fp_my_roster')) || '[]'));
+    otherDraftedPlayers = new Set(JSON.parse(localStorage.getItem(getStorageKey('fp_other_drafted')) || '[]'));
+    starredPlayers = new Set(JSON.parse(localStorage.getItem(getStorageKey('fp_starred_players')) || '[]'));
+  }
+  loadDraftState();
+
   let currentPosFilter = 'ALL';
   let currentAuthorFilter = localStorage.getItem('fp_rank_source') || 'Consensus';
   let searchQuery = '';
@@ -54,6 +67,8 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // DOM Elements
+  const btnModeRedraft = document.getElementById('btnModeRedraft');
+  const btnModeUnderdog = document.getElementById('btnModeUnderdog');
   const playerGrid = document.getElementById('playerGrid');
   const emptyState = document.getElementById('emptyState');
   const searchInput = document.getElementById('searchInput');
@@ -168,38 +183,133 @@ document.addEventListener('DOMContentLoaded', () => {
       renderPlayerBoard();
     });
   }
+
+  // Wire Platform Mode Switchers
+  if (btnModeRedraft) {
+    btnModeRedraft.addEventListener('click', () => {
+      if (currentPlatformMode !== 'redraft') {
+        loadPlatformData('redraft');
+      }
+    });
+  }
+  if (btnModeUnderdog) {
+    btnModeUnderdog.addEventListener('click', () => {
+      if (currentPlatformMode !== 'underdog') {
+        loadPlatformData('underdog');
+      }
+    });
+  }
+
   updateSidebarVisibility();
   updateHeaderCounts();
 
-  // Load Sleeper Live ADP & FantasyPoints Database in Parallel
-  Promise.all([
-    fetchSleeperAdp(),
-    fetch('fantasypoints_db.json?t=' + Date.now()).then(r => r.json())
-  ])
-  .then(([sleeperData, dbData]) => {
-    rawTakesData = dbData;
-    processTakesData(dbData);
-    renderPlayerBoard();
-  })
-  .catch(err => {
-    console.error('Initialization error:', err);
-    fetch('fantasypoints_db.json?t=' + Date.now())
+  // Load Platform Data on Startup
+  loadPlatformData(currentPlatformMode);
+
+  // Fetch Underdog ADP Dataset
+  function fetchUnderdogAdp() {
+    return fetch('underdog_adp.json?t=' + Date.now())
       .then(res => res.json())
-      .then(data => {
-        rawTakesData = data;
-        processTakesData(data);
-        renderPlayerBoard();
+      .then(payload => {
+        underdogAdpMap.clear();
+        const playersObj = payload.players || {};
+        Object.entries(playersObj).forEach(([normKey, p]) => {
+          underdogAdpMap.set(normKey, {
+            adp: p.adp,
+            exact_adp: p.exact_adp,
+            position: p.position,
+            team: p.team,
+            full_name: p.full_name,
+            pos_rank: p.pos_rank,
+            pos_num: p.pos_num,
+            bye_week: p.bye_week
+          });
+        });
+        console.log(`Loaded Underdog ADP for ${underdogAdpMap.size} players.`);
+        return underdogAdpMap;
       })
-      .catch(e => {
-        playerGrid.innerHTML = `
-          <div class="empty-state">
-            <div class="empty-icon">⚠️</div>
-            <h3>Could not load player dataset</h3>
-            <p>Please ensure fantasypoints_db.json exists in the project root.</p>
-          </div>
-        `;
+      .catch(err => {
+        console.warn('Underdog ADP fetch failed:', err);
+        return underdogAdpMap;
       });
-  });
+  }
+
+  // Load Platform Data (Unified Redraft vs Underdog Handler)
+  function loadPlatformData(mode) {
+    currentPlatformMode = mode;
+    localStorage.setItem('fp_platform_mode', mode);
+    loadDraftState();
+
+    if (btnModeRedraft) btnModeRedraft.classList.toggle('active', mode === 'redraft');
+    if (btnModeUnderdog) btnModeUnderdog.classList.toggle('active', mode === 'underdog');
+
+    if (sleeperStatusBadge) {
+      if (mode === 'underdog') {
+        sleeperStatusBadge.className = 'badge-underdog-live';
+        sleeperStatusBadge.textContent = '🐶 Underdog Best Ball (0.5 PPR)';
+      } else {
+        sleeperStatusBadge.className = 'badge-sleeper-live';
+        sleeperStatusBadge.textContent = '🟢 Sleeper ADP: Live';
+      }
+    }
+
+    if (thAdp) {
+      const span = thAdp.querySelector('span');
+      if (span) span.textContent = (mode === 'underdog') ? 'UD ADP' : 'ADP';
+      thAdp.title = (mode === 'underdog') ? 'Sort by Underdog Best Ball ADP' : 'Sort by Sleeper ADP';
+    }
+
+    if (authorFilterSelect) {
+      if (mode === 'underdog') {
+        authorFilterSelect.innerHTML = `
+          <option value="Consensus" selected>🏆 Best Ball Rankings</option>
+        `;
+        currentAuthorFilter = 'Consensus';
+      } else {
+        authorFilterSelect.innerHTML = `
+          <option value="Consensus" selected>🏆 Consensus Rankings</option>
+          <option value="John Hansen">John Hansen</option>
+          <option value="Scott Barrett">Scott Barrett</option>
+          <option value="Graham Barfield">Graham Barfield</option>
+        `;
+        currentAuthorFilter = localStorage.getItem('fp_rank_source') || 'Consensus';
+        authorFilterSelect.value = currentAuthorFilter;
+      }
+    }
+
+    if (mode === 'underdog') {
+      Promise.all([
+        fetchUnderdogAdp(),
+        fetch('underdog_db.json?t=' + Date.now()).then(r => r.json()).catch(() => []),
+        fetch('fantasypoints_db.json?t=' + Date.now()).then(r => r.json()).catch(() => [])
+      ])
+      .then(([udAdp, udData, redraftData]) => {
+        rawTakesData = udData;
+        processTakesData(udData, 'underdog', redraftData);
+        renderPlayerBoard();
+        updateHeaderCounts();
+        renderRosterSidebarContent();
+      })
+      .catch(err => {
+        console.error('Underdog load error:', err);
+      });
+    } else {
+      Promise.all([
+        fetchSleeperAdp(),
+        fetch('fantasypoints_db.json?t=' + Date.now()).then(r => r.json())
+      ])
+      .then(([sleeperData, dbData]) => {
+        rawTakesData = dbData;
+        processTakesData(dbData, 'redraft');
+        renderPlayerBoard();
+        updateHeaderCounts();
+        renderRosterSidebarContent();
+      })
+      .catch(err => {
+        console.error('Redraft initialization error:', err);
+      });
+    }
+  }
 
   // Fetch Live Sleeper Real ADP & Positional Ranks
   function fetchSleeperAdp() {
@@ -310,20 +420,40 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Process & Group Takes Data
-  function processTakesData(takes) {
+  function processTakesData(takes, mode = 'redraft', secondaryTakes = []) {
     groupedPlayersMap.clear();
     const allAuthors = new Set();
+    const activeAdpMap = (mode === 'underdog') ? underdogAdpMap : sleeperAdpMap;
+
+    // In Underdog mode, populate all ADP players first so unmentioned players exist on the board
+    if (mode === 'underdog' && activeAdpMap.size > 0) {
+      activeAdpMap.forEach((info, canonicalKey) => {
+        groupedPlayersMap.set(canonicalKey, {
+          canonical_key: canonicalKey,
+          player_name: info.full_name,
+          position: info.position,
+          team: info.team,
+          sleeper_adp: info.adp,
+          exact_adp: info.exact_adp || info.adp,
+          pos_rank: info.pos_rank,
+          pos_num: info.pos_num || 99,
+          raw_takes: [],
+          author_takes_map: new Map(),
+          author_pos_ranks: new Map()
+        });
+      });
+    }
 
     takes.forEach(take => {
       const rawName = take.player_name ? take.player_name.trim() : 'Unknown Player';
       const canonicalKey = getCanonicalNameKey(rawName);
       
-      const sleeperInfo = sleeperAdpMap.get(canonicalKey);
-      const displayName = sleeperInfo?.full_name || rawName;
-      const position = take.position || sleeperInfo?.position || 'FLEX';
-      const team = take.team || sleeperInfo?.team || 'NFL';
-      const sleeperAdp = sleeperInfo?.adp || 300;
-      const posRank = sleeperInfo?.pos_rank || `${position}`;
+      const adpInfo = activeAdpMap.get(canonicalKey);
+      const displayName = adpInfo?.full_name || rawName;
+      const position = take.position || adpInfo?.position || 'FLEX';
+      const team = take.team || adpInfo?.team || 'NFL';
+      const marketAdp = adpInfo?.adp || 300;
+      const posRank = adpInfo?.pos_rank || `${position}`;
 
       if (!groupedPlayersMap.has(canonicalKey)) {
         groupedPlayersMap.set(canonicalKey, {
@@ -331,9 +461,10 @@ document.addEventListener('DOMContentLoaded', () => {
           player_name: displayName,
           position: position,
           team: team,
-          sleeper_adp: sleeperAdp,
+          sleeper_adp: marketAdp,
+          exact_adp: adpInfo?.exact_adp || marketAdp,
           pos_rank: posRank,
-          pos_num: sleeperInfo?.pos_num || 99,
+          pos_num: adpInfo?.pos_num || 99,
           raw_takes: [],
           author_takes_map: new Map(),
           author_pos_ranks: new Map()
@@ -360,7 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
 
-      if (take.fp_overall_rank && (take.author === 'FantasyPoints Staff' || take.key_reason?.includes('Top-200'))) {
+      if (take.fp_overall_rank && (take.author === 'FantasyPoints Staff' || take.key_reason?.includes('Top-200') || take.key_reason?.includes('Best Ball Rank'))) {
         playerObj.fp_overall_rank = take.fp_overall_rank;
       }
 
@@ -369,7 +500,7 @@ document.addEventListener('DOMContentLoaded', () => {
         (!take.stance || take.stance === 'Bullish') && 
         (!take.key_reason || take.key_reason.startsWith('Official '));
       
-      const isFlagshipStance = ['Exodia', 'The Twelve', "Guru's Guys", 'Gurus Guys', 'Hansen 50', 'Hansen-50', 'Dirty Thirty', 'Dirty-Thirty'].includes(take.stance);
+      const isFlagshipStance = ['Exodia', 'The Twelve', "Guru's Guys", 'Gurus Guys', 'Hansen 50', 'Hansen-50', 'Dirty Thirty', 'Dirty-Thirty', 'Tournament Anchor', 'Stack Partner', 'Late-Round Spike'].includes(take.stance);
 
       // Only add to author_takes_map if it's a real article take OR a flagship stance!
       if (!isGenericCsvRank || isFlagshipStance) {
@@ -407,15 +538,43 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    if (authorFilterSelect) {
-      const selected = localStorage.getItem('fp_rank_source') || 'Consensus';
-      authorFilterSelect.innerHTML = `
-        <option value="Consensus">🏆 Consensus Rankings</option>
-        <option value="John Hansen">John Hansen</option>
-        <option value="Scott Barrett">Scott Barrett</option>
-        <option value="Graham Barfield">Graham Barfield</option>
-      `;
-      authorFilterSelect.value = selected;
+    // In Underdog mode, blend in secondary redraft takes (Scott Barrett / John Hansen Guru's Guys)
+    if (mode === 'underdog' && Array.isArray(secondaryTakes) && secondaryTakes.length > 0) {
+      secondaryTakes.forEach(take => {
+        const rawName = take.player_name ? take.player_name.trim() : '';
+        const canonicalKey = getCanonicalNameKey(rawName);
+        if (!canonicalKey || !groupedPlayersMap.has(canonicalKey)) return;
+
+        const playerObj = groupedPlayersMap.get(canonicalKey);
+        const isFlagship = ['Exodia', 'The Twelve', "Guru's Guys", 'Gurus Guys', 'Hansen 50', 'Hansen-50', 'Dirty Thirty', 'Dirty-Thirty', 'Must-Draft'].includes(take.stance);
+        const hasWrittenCommentary = take.key_reason && !take.key_reason.startsWith('Official ') && take.key_reason.length > 15;
+
+        if (isFlagship || hasWrittenCommentary) {
+          const authorList = getCleanAuthorsList(take.author);
+          authorList.forEach(author => {
+            const authorTag = `${author} (Redraft)`;
+            if (!playerObj.author_takes_map.has(authorTag) && !playerObj.author_takes_map.has(author)) {
+              playerObj.author_takes_map.set(authorTag, {
+                author: authorTag,
+                stances: new Set(),
+                tiers: new Set(),
+                reasons: [],
+                upside_metrics: [],
+                risk_factors: [],
+                is_redraft_insight: true
+              });
+            }
+            const authConsolidated = playerObj.author_takes_map.get(authorTag) || playerObj.author_takes_map.get(author);
+            if (take.stance) authConsolidated.stances.add(take.stance);
+            if (take.key_reason && !take.key_reason.startsWith('Official ') && !authConsolidated.reasons.includes(take.key_reason)) {
+              authConsolidated.reasons.push(take.key_reason);
+            }
+            if (take.upside_metric && !take.upside_metric.startsWith('Official ') && !authConsolidated.upside_metrics.includes(take.upside_metric)) {
+              authConsolidated.upside_metrics.push(take.upside_metric);
+            }
+          });
+        }
+      });
     }
 
     groupedPlayersMap.forEach(p => {
@@ -904,18 +1063,19 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       starredPlayers.add(canonicalKey);
     }
-    localStorage.setItem('fp_starred_players', JSON.stringify(Array.from(starredPlayers)));
+    localStorage.setItem(getStorageKey('fp_starred_players'), JSON.stringify(Array.from(starredPlayers)));
     renderPlayerBoard();
   }
 
   function saveDraftStates() {
-    localStorage.setItem('fp_my_roster', JSON.stringify(Array.from(myRosterPlayers)));
-    localStorage.setItem('fp_other_drafted', JSON.stringify(Array.from(otherDraftedPlayers)));
+    localStorage.setItem(getStorageKey('fp_my_roster'), JSON.stringify(Array.from(myRosterPlayers)));
+    localStorage.setItem(getStorageKey('fp_other_drafted'), JSON.stringify(Array.from(otherDraftedPlayers)));
   }
 
   function updateHeaderCounts() {
+    const maxRosterSize = (currentPlatformMode === 'underdog') ? 18 : 15;
     if (starredCountEl) starredCountEl.textContent = starredPlayers.size;
-    if (rosterCountBadge) rosterCountBadge.textContent = `(${myRosterPlayers.size}/15)`;
+    if (rosterCountBadge) rosterCountBadge.textContent = `(${myRosterPlayers.size}/${maxRosterSize})`;
     
     const totalPlayers = groupedPlayersMap.size;
     const activeAvailable = totalPlayers - (myRosterPlayers.size + otherDraftedPlayers.size);
@@ -1087,7 +1247,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="modal-meta-bar" style="margin-bottom: 6px;">
           <span class="badge-pos ${player.position}">${escapeHtml(player.display_pos_rank || player.pos_rank)}</span>
           <span class="team-name" style="font-size: 1rem;">${escapeHtml(player.team)}</span>
-          <span class="adp-tag">Sleeper PPR: ${adpDisplay}</span>
+          <span class="adp-tag">${(currentPlatformMode === 'underdog') ? 'Underdog 0.5 PPR' : 'Sleeper PPR'}: ${adpDisplay}</span>
           ${isDraftedMe ? '<span class="badge-stance Must-Draft">MY TEAM</span>' : ''}
           ${isDraftedOther ? '<span class="badge-stance Avoid">DRAFTED</span>' : ''}
         </div>
@@ -1257,14 +1417,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   resetDraftBtn.addEventListener('click', () => {
-    if (confirm('Reset all drafted player statuses & rosters?')) {
+    const modeLabel = (currentPlatformMode === 'underdog') ? 'Underdog Best Ball' : 'Redraft';
+    if (confirm(`Reset all drafted player statuses & rosters for ${modeLabel}?`)) {
       myRosterPlayers.clear();
       otherDraftedPlayers.clear();
       starredPlayers.clear();
-      localStorage.removeItem('fp_my_roster');
-      localStorage.removeItem('fp_other_drafted');
-      localStorage.removeItem('fp_starred_players');
+      localStorage.removeItem(getStorageKey('fp_my_roster'));
+      localStorage.removeItem(getStorageKey('fp_other_drafted'));
+      localStorage.removeItem(getStorageKey('fp_starred_players'));
       renderPlayerBoard();
+      updateHeaderCounts();
+      renderRosterSidebarContent();
     }
   });
 
