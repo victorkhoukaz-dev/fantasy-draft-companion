@@ -849,21 +849,30 @@ select option {
 }
 
 .bb-pos-gauge-chip.optimal {
-  border-color: rgba(16, 185, 129, 0.5);
+  border-color: rgba(16, 185, 129, 0.7);
   color: #6ee7b7;
-  background: rgba(16, 185, 129, 0.08);
+  background: rgba(16, 185, 129, 0.15);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.25);
 }
 
 .bb-pos-gauge-chip.capped {
-  border-color: rgba(245, 158, 11, 0.5);
+  border-color: rgba(245, 158, 11, 0.8);
   color: #fde68a;
-  background: rgba(245, 158, 11, 0.1);
+  background: rgba(245, 158, 11, 0.18);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.25);
 }
 
 .bb-pos-gauge-chip.over {
-  border-color: rgba(244, 63, 94, 0.5);
-  color: #fda4af;
-  background: rgba(244, 63, 94, 0.15);
+  border-color: rgba(244, 63, 94, 0.9);
+  color: #fecdd3;
+  background: rgba(244, 63, 94, 0.25);
+  box-shadow: 0 0 12px rgba(244, 63, 94, 0.5);
+  animation: overCapPulse 1.8s infinite ease-in-out;
+}
+
+@keyframes overCapPulse {
+  0%, 100% { border-color: rgba(244, 63, 94, 0.6); box-shadow: 0 0 8px rgba(244, 63, 94, 0.3); }
+  50% { border-color: rgba(244, 63, 94, 1); box-shadow: 0 0 16px rgba(244, 63, 94, 0.7); }
 }
 
 .bb-pos-name {

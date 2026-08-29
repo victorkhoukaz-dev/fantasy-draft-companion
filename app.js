@@ -1001,32 +1001,35 @@ document.addEventListener('DOMContentLoaded', () => {
     const hasEliteTE = myPlayersList.some(p => p.position === 'TE' && (p.sleeper_adp < 60 || p.exact_adp < 60));
     const earlyRBsCount = myPlayersList.filter(p => p.position === 'RB' && (p.sleeper_adp < 36 || p.exact_adp < 36)).length;
 
-    // Dynamic Positional Targets based on Underdog Strategy Guide
+    // Dynamic Positional Targets based on Underdog Strategy Guide (Always sums to exactly 18)
     const targetQB = hasEliteQB ? 2 : 3;
-    const targetTE = hasEliteTE ? 2 : 3;
+    const targetTE = hasEliteTE ? 2 : (posCounts.TE >= 3 ? 3 : 2);
     let targetRB = 5;
     if (earlyRBsCount >= 2) targetRB = 5;
     else if (earlyRBsCount === 1) targetRB = 5;
-    else targetRB = 6; // Zero RB needs 6-7
+    else if (earlyRBsCount === 0 && myPlayersList.length >= 3 && posCounts.RB >= 6) targetRB = 6;
+    else targetRB = 5;
 
+    // Remaining roster spots allocated to WR (7-9 WRs)
     const targetWR = Math.max(7, 18 - targetQB - targetTE - targetRB);
 
     // Detected Archetype & Tactical Roster Strategy Advice
     let archetype = '🎯 Best Ball Build';
-    let archetypeAdvice = 'Target 7-9 WRs, 2-3 QBs, and 2-3 TEs. Build correlation with your QBs.';
+    let archetypeAdvice = 'Target 5-6 RBs, 7-9 WRs, 2-3 QBs, and 2-3 TEs. Build correlation with your QBs.';
 
-    if (earlyRBsCount === 0 && myPlayersList.length >= 3) {
-      archetype = '🚫 ZERO-RB BUILD';
-      archetypeAdvice = '0 early RBs. Target 6-7 high-upside RBs in Rds 7-15. Hammer elite WR depth & stacks now.';
-    } else if (earlyRBsCount === 1) {
-      archetype = '🦸 HERO-RB BUILD';
-      archetypeAdvice = 'Anchor locked in. Do not draft RB in Rds 3-7. Hammer WRs, locked QB & TE.';
+    // Priority 1: Hyper-Fragile (Elite QB + Elite TE, or dual early QB/TE investment)
+    if ((hasEliteQB && hasEliteTE) || (posCounts.QB >= 1 && posCounts.TE >= 1 && (hasEliteQB || hasEliteTE))) {
+      archetype = '👑 HYPER-FRAGILE';
+      archetypeAdvice = 'Elite QB + TE secured. Hard cap at 2 QBs and 2 TEs to preserve valuable WR & RB roster capital.';
     } else if (earlyRBsCount >= 2) {
       archetype = '⚓ DUAL ANCHOR RB';
-      archetypeAdvice = '2 early RBs locked. Hard cap at 5 RBs max. Shift all capital to WR volume & stacks.';
-    } else if (hasEliteQB && hasEliteTE) {
-      archetype = '👑 HYPER-FRAGILE';
-      archetypeAdvice = 'Elite QB + TE secured. Cap QB at 2 and TE at 2. Devote remaining picks to WR and RB.';
+      archetypeAdvice = '2 early anchor RBs locked in. Hard cap at 5 RBs total. Shift all mid/late capital to WR volume & stacks.';
+    } else if (earlyRBsCount === 1) {
+      archetype = '🦸 HERO-RB BUILD';
+      archetypeAdvice = '1 anchor RB drafted. Do NOT draft RB in Rds 3-7. Focus on WR volume, QB, and TE.';
+    } else if (earlyRBsCount === 0 && myPlayersList.length >= 3) {
+      archetype = '🚫 ZERO-RB BUILD';
+      archetypeAdvice = '0 early RBs. Target 5-6 high-upside RBs in Rds 7-15. Build massive WR dominance & stacks now.';
     }
 
     return {
@@ -1265,11 +1268,24 @@ document.addEventListener('DOMContentLoaded', () => {
       const structure = evaluateBestBallRosterStructure(myPlayersList);
       const stackContext = computeRosterStackContext(myRosterPlayers, groupedPlayersMap);
 
-      // Build Positional Gauge Chips
-      const qbClass = structure.posCounts.QB > structure.targets.QB ? 'over' : (structure.posCounts.QB === structure.targets.QB ? 'optimal' : '');
-      const rbClass = structure.posCounts.RB > structure.targets.RB ? 'over' : (structure.posCounts.RB === structure.targets.RB ? 'optimal' : '');
-      const wrClass = structure.posCounts.WR > structure.targets.WR ? 'optimal' : (structure.posCounts.WR >= 7 ? 'optimal' : '');
-      const teClass = structure.posCounts.TE > structure.targets.TE ? 'over' : (structure.posCounts.TE === structure.targets.TE ? 'optimal' : '');
+      // Helper: Determine Positional Status Classes (Neutral, Approaching/Capped = Yellow, Optimal = Green, Over = Red)
+      function getPosGaugeClass(pos, count, target) {
+        if (pos === 'WR') {
+          if (count > 9) return 'over';
+          if (count >= target && count > 0) return 'optimal';
+          if (count >= 7 || (target > 7 && count === target - 1)) return 'capped';
+          return '';
+        }
+        if (count > target) return 'over';
+        if (count === target && count > 0) return 'optimal';
+        if (count === target - 1 && count > 0) return 'capped';
+        return '';
+      }
+
+      const qbClass = getPosGaugeClass('QB', structure.posCounts.QB, structure.targets.QB);
+      const rbClass = getPosGaugeClass('RB', structure.posCounts.RB, structure.targets.RB);
+      const wrClass = getPosGaugeClass('WR', structure.posCounts.WR, structure.targets.WR);
+      const teClass = getPosGaugeClass('TE', structure.posCounts.TE, structure.targets.TE);
 
       const hudEl = document.createElement('div');
       hudEl.className = 'bb-structure-hud';
