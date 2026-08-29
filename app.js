@@ -2002,6 +2002,31 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
+  const udDraftSlotSelect = document.getElementById('udDraftSlotSelect');
+  let myUdDraftSlot = parseInt(localStorage.getItem('fp_ud_draft_slot') || '0', 10) || null;
+
+  if (udDraftSlotSelect) {
+    if (myUdDraftSlot) udDraftSlotSelect.value = String(myUdDraftSlot);
+    udDraftSlotSelect.addEventListener('change', () => {
+      const val = parseInt(udDraftSlotSelect.value, 10);
+      if (val >= 1 && val <= 12) {
+        myUdDraftSlot = val;
+        localStorage.setItem('fp_ud_draft_slot', String(val));
+      } else {
+        myUdDraftSlot = null;
+        localStorage.removeItem('fp_ud_draft_slot');
+      }
+      if (underdogChannel) underdogChannel.postMessage({ type: 'REQUEST_UNDERDOG_SYNC' });
+    });
+  }
+
+  function getSnakePickSlot(pickNo, totalTeams = 12) {
+    if (!pickNo || pickNo < 1) return 0;
+    const r = Math.ceil(pickNo / totalTeams);
+    const posInRound = (pickNo - 1) % totalTeams;
+    return (r % 2 === 1) ? (posInRound + 1) : (totalTeams - posInRound);
+  }
+
   function handleIncomingUnderdogPicks(data) {
     isUnderdogRelayConnected = true;
     const picks = data.picks;
@@ -2035,7 +2060,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
 
-      if (p.is_user) {
+      const pickSlot = getSnakePickSlot(p.pick_no, 12);
+      const isUser = p.is_user || (myUdDraftSlot && pickSlot === myUdDraftSlot);
+
+      if (isUser) {
         if (!myRosterPlayers.has(canonicalKey)) {
           myRosterPlayers.add(canonicalKey);
           otherDraftedPlayers.delete(canonicalKey);
