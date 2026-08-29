@@ -1017,17 +1017,27 @@ document.addEventListener('DOMContentLoaded', () => {
     let archetype = '🎯 Best Ball Build';
     let archetypeAdvice = 'Target 5-6 RBs, 7-9 WRs, 2-3 QBs, and 2-3 TEs. Build correlation with your QBs.';
 
+    const totalDrafted = myPlayersList.length;
+
     // Priority 1: Hyper-Fragile (Elite QB + Elite TE, or dual early QB/TE investment)
     if ((hasEliteQB && hasEliteTE) || (posCounts.QB >= 1 && posCounts.TE >= 1 && (hasEliteQB || hasEliteTE))) {
       archetype = '👑 HYPER-FRAGILE';
       archetypeAdvice = 'Elite QB + TE secured. Hard cap at 2 QBs and 2 TEs to preserve valuable WR & RB roster capital.';
-    } else if (earlyRBsCount >= 2) {
+    } else if (posCounts.RB >= 3 && totalDrafted <= 5) {
+      archetype = '💥 TRIPLE ANCHOR';
+      archetypeAdvice = '3 early RBs drafted. Hard cap at 4 RBs total! Devote all remaining picks to WR volume, QB & TE.';
+    } else if (earlyRBsCount >= 2 || (posCounts.RB >= 2 && totalDrafted <= 4)) {
       archetype = '⚓ DUAL ANCHOR RB';
-      archetypeAdvice = '2 early anchor RBs locked in. Hard cap at 5 RBs total. Shift all mid/late capital to WR volume & stacks.';
+      archetypeAdvice = '2 early anchor RBs locked in. Hard cap at 5 RBs max. Shift all mid/late capital to WR volume & stacks.';
     } else if (earlyRBsCount === 1) {
-      archetype = '🦸 HERO-RB BUILD';
-      archetypeAdvice = '1 anchor RB drafted. Do NOT draft RB in Rds 3-7. Focus on WR volume, QB, and TE.';
-    } else if (earlyRBsCount === 0 && myPlayersList.length >= 3) {
+      if (totalDrafted <= 2) {
+        archetype = '⚓ ANCHOR RB START';
+        archetypeAdvice = '1 elite RB anchor secured. Open to Dual Anchor (if elite RB falls in R2-3) or pivot to WRs for Hero-RB.';
+      } else {
+        archetype = '🦸 HERO-RB BUILD';
+        archetypeAdvice = 'Hero RB locked in. Pause on RBs in Rds 3-7. Pour capital into WR volume, locked QB, and TE.';
+      }
+    } else if (earlyRBsCount === 0 && totalDrafted >= 3) {
       archetype = '🚫 ZERO-RB BUILD';
       archetypeAdvice = '0 early RBs. Target 5-6 high-upside RBs in Rds 7-15. Build massive WR dominance & stacks now.';
     }
