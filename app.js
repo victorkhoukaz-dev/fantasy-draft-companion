@@ -1976,6 +1976,14 @@ document.addEventListener('DOMContentLoaded', () => {
   let underdogChannel = null;
   let isUnderdogRelayConnected = false;
 
+  // Listen for both window.postMessage (from extension bridge) and BroadcastChannel
+  window.addEventListener('message', (event) => {
+    const data = event.data;
+    if (data && data.type === 'UNDERDOG_PICKS_SYNC' && Array.isArray(data.picks)) {
+      handleIncomingUnderdogPicks(data);
+    }
+  });
+
   if (typeof BroadcastChannel !== 'undefined') {
     underdogChannel = new BroadcastChannel('underdog-sync');
     

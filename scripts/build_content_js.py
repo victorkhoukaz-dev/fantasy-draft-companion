@@ -8,8 +8,20 @@ with open(adp_path, 'r', encoding='utf-8') as f:
 player_list = []
 players_dict = adp_data.get('players', {})
 for p in players_dict.values():
+    full_name = p['full_name']
+    
+    # Generate variations
+    clean_name = full_name.replace("'", "").replace("’", "").replace(".", "").strip()
+    no_suffix = full_name.replace(" Jr.", "").replace(" Jr", "").replace(" III", "").replace(" II", "").strip()
+    
+    parts = full_name.split()
+    short_name = f"{parts[0][0]}. {' '.join(parts[1:])}" if len(parts) > 1 else full_name
+
+    aliases = list(set([full_name, clean_name, no_suffix, short_name]))
+
     player_list.append({
-        'name': p['full_name'],
+        'name': full_name,
+        'aliases': aliases,
         'pos': p.get('position', 'FLEX'),
         'team': p.get('team', 'NFL')
     })
@@ -25,7 +37,6 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
   console.log('[FantasyPoints Relay] Extension active on ' + window.location.hostname);
 
   const KNOWN_PLAYERS = {players_json};
-  const channel = new BroadcastChannel('underdog-sync');
   let lastPicksCount = -1;
   let syncStatusEl = null;
 
@@ -40,7 +51,7 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     syncStatusEl.id = 'fp-ud-sync-badge';
     syncStatusEl.style.cssText = 'position: fixed; bottom: 16px; right: 16px; z-index: 9999999; background: #0f172a; border: 1px solid #10b981; color: #6ee7b7; padding: 7px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,0.6); display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; transition: all 0.2s ease;';
     syncStatusEl.innerHTML = '<span>🟢</span><span>FantasyPoints: Active</span>';
-    syncStatusEl.title = 'Click to inspect synced picks in Console';
+    syncStatusEl.title = 'Click to inspect detected picks';
     
     syncStatusEl.addEventListener('click', () => {{
       const picks = parseDraftPicks();
@@ -56,7 +67,7 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     return match ? match[1] : 'underdog-draft';
   }}
 
-  function normalizeText(str) {{
+  function normalize(str) {{
     return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   }}
 
@@ -65,30 +76,37 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
       const picks = [];
       const seenKeys = new Set();
       
-      // Strategy 1: Search all elements across the page for known player names
-      const candidates = document.querySelectorAll(
-        '[class*="pick"], [class*="Pick"], [class*="cell"], [class*="Cell"], [class*="card"], [class*="Card"], [class*="tile"], [class*="Tile"], [class*="player"], [class*="Player"], [data-testid*="pick"], [data-testid*="cell"], tr, li, div'
-      );
-
-      candidates.forEach(el => {{
+      // Strategy 1: Search all elements across the page
+      const elements = document.querySelectorAll('*');
+      
+      elements.forEach(el => {{
+        // Only inspect leaf or small text nodes to avoid matching outer wrapper bodies
+        if (el.children.length > 8) return;
         const text = (el.innerText || el.textContent || '').trim();
-        if (!text || text.length > 250) return; // ignore giant containers
+        if (!text || text.length < 3 || text.length > 180) return;
+
+        const normText = normalize(text);
 
         for (let i = 0; i < KNOWN_PLAYERS.length; i++) {{
           const kp = KNOWN_PLAYERS[i];
-          if (text.includes(kp.name)) {{
-            const key = normalizeText(kp.name);
+          const matched = kp.aliases.some(alias => {{
+            const normAlias = normalize(alias);
+            return normText.includes(normAlias);
+          }});
+
+          if (matched) {{
+            const key = normalize(kp.name);
             if (!seenKeys.has(key)) {{
               seenKeys.add(key);
               
-              const isUser = text.includes('YOU') || text.includes('My Team') || el.classList.contains('is-user') || el.classList.contains('user-pick') || el.querySelector('[class*="user"], [class*="myPick"], [class*="isUser"]') !== null;
+              const isUser = text.includes('YOU') || text.includes('My Team') || el.classList.contains('is-user') || el.classList.contains('user-pick') || (el.parentElement && el.parentElement.classList.contains('user-pick'));
 
               picks.push({{
                 pick_no: picks.length + 1,
                 player_name: kp.name,
                 position: kp.pos,
                 team: kp.team,
-                is_user: isUser
+                is_user: Boolean(isUser)
               }});
             }}
             break;
@@ -96,13 +114,14 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
         }}
       }});
 
-      // Strategy 2: If few or no picks found via elements, scan whole page text
-      if (picks.length === 0 && document.body) {{
-        const bodyText = document.body.innerText || '';
+      // Strategy 2: Scan full page text as fallback
+      if (document.body) {{
+        const fullBodyNorm = normalize(document.body.innerText || '');
         KNOWN_PLAYERS.forEach(kp => {{
-          if (bodyText.includes(kp.name)) {{
-            const key = normalizeText(kp.name);
-            if (!seenKeys.has(key)) {{
+          const key = normalize(kp.name);
+          if (!seenKeys.has(key)) {{
+            const matched = kp.aliases.some(alias => fullBodyNorm.includes(normalize(alias)));
+            if (matched) {{
               seenKeys.add(key);
               picks.push({{
                 pick_no: picks.length + 1,
@@ -121,6 +140,31 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
       console.warn('[FantasyPoints Relay] parse error:', err);
       return [];
     }}
+  }}
+
+  function sendPicks(picks, draftId) {{
+    const payload = {{
+      type: 'UNDERDOG_PICKS_SYNC',
+      draft_id: draftId,
+      picks: picks,
+      timestamp: Date.now()
+    }};
+
+    // 1. Send to Extension Background Service Worker (Cross-Tab Router)
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {{
+      try {{
+        chrome.runtime.sendMessage(payload);
+      }} catch(e) {{}}
+    }}
+
+    // 2. BroadcastChannel
+    try {{
+      const channel = new BroadcastChannel('underdog-sync');
+      channel.postMessage(payload);
+    }} catch(e) {{}}
+
+    // 3. Local postMessage
+    window.postMessage(payload, '*');
   }}
 
   function tick() {{
@@ -144,13 +188,8 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
 
       if (picks.length !== lastPicksCount && picks.length > 0) {{
         lastPicksCount = picks.length;
-        console.log('[FantasyPoints Relay] Broadcasting ' + picks.length + ' Underdog picks to Companion...');
-        channel.postMessage({{
-          type: 'UNDERDOG_PICKS_SYNC',
-          draft_id: draftId,
-          picks: picks,
-          timestamp: Date.now()
-        }});
+        console.log('[FantasyPoints Relay] Broadcasting ' + picks.length + ' Underdog picks to Companion...', picks);
+        sendPicks(picks, draftId);
       }}
     }} catch (err) {{
       console.warn('[FantasyPoints Relay] tick error:', err);
@@ -159,15 +198,17 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
 
   // Safe 1.5s interval
   setInterval(tick, 1500);
-  setTimeout(tick, 1200);
+  setTimeout(tick, 1000);
 
   // Listen for sync ping from companion
-  channel.onmessage = (e) => {{
-    if (e.data && e.data.type === 'REQUEST_UNDERDOG_SYNC') {{
-      lastPicksCount = -1;
-      tick();
-    }}
-  }};
+  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {{
+    chrome.runtime.onMessage.addListener((msg) => {{
+      if (msg && msg.type === 'REQUEST_UNDERDOG_SYNC') {{
+        lastPicksCount = -1;
+        tick();
+      }}
+    }});
+  }}
 }})();
 """
 
@@ -175,4 +216,4 @@ out_path = os.path.join(os.getcwd(), 'underdog-extension', 'content.js')
 with open(out_path, 'w', encoding='utf-8') as f:
     f.write(content_js_template)
 
-print(f"Generated {out_path} with {len(player_list)} known players successfully!")
+print(f"Generated enhanced {out_path} with aliases successfully!")
