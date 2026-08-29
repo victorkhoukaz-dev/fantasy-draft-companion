@@ -51,7 +51,7 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     syncStatusEl.id = 'fp-ud-sync-badge';
     syncStatusEl.style.cssText = 'position: fixed; bottom: 16px; right: 16px; z-index: 9999999; background: #0f172a; border: 1px solid #10b981; color: #6ee7b7; padding: 7px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,0.6); display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; transition: all 0.2s ease;';
     syncStatusEl.innerHTML = '<span>🟢</span><span>FantasyPoints: Active</span>';
-    syncStatusEl.title = 'Click to inspect detected picks';
+    syncStatusEl.title = 'Click to inspect detected picks in console';
     
     syncStatusEl.addEventListener('click', () => {{
       const picks = parseDraftPicks();
@@ -71,19 +71,45 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   }}
 
+  function isInsideAvailableQueue(el) {{
+    let cur = el;
+    while (cur && cur !== document.body) {{
+      const cls = (typeof cur.className === 'string' ? cur.className : '').toLowerCase();
+      const id = (cur.id || '').toLowerCase();
+      const testId = (cur.getAttribute && cur.getAttribute('data-testid') || '').toLowerCase();
+      
+      if (
+        cls.includes('queue') || cls.includes('available') || cls.includes('rankings') || 
+        cls.includes('playerlist') || cls.includes('player-list') || cls.includes('search') ||
+        id.includes('queue') || id.includes('available') || id.includes('player-list') ||
+        testId.includes('player-list') || testId.includes('queue')
+      ) {{
+        return true;
+      }}
+      cur = cur.parentElement;
+    }}
+    return false;
+  }}
+
   function parseDraftPicks() {{
     try {{
       const picks = [];
       const seenKeys = new Set();
       
-      // Strategy 1: Search all elements across the page
-      const elements = document.querySelectorAll('*');
-      
-      elements.forEach(el => {{
-        // Only inspect leaf or small text nodes to avoid matching outer wrapper bodies
-        if (el.children.length > 8) return;
+      // Target elements strictly inside the draft board / completed pick cells
+      const boardCells = document.querySelectorAll(
+        '[class*="board"] [class*="cell"], [class*="Board"] [class*="Cell"], [class*="draft-board"] div, [class*="DraftBoard"] div, [class*="pickCard"], [class*="DraftPick"], [class*="PickTile"], [data-testid*="draft-cell"], [data-testid*="pick"]'
+      );
+
+      const targetElements = (boardCells.length > 0) ? boardCells : document.querySelectorAll('[class*="cell"], [class*="Cell"], [class*="card"], [class*="Card"], [class*="tile"], [class*="Tile"], div');
+
+      targetElements.forEach(el => {{
+        // Exclude elements inside the available player queue/rankings list!
+        if (isInsideAvailableQueue(el)) return;
+        if (el.children.length > 6) return;
+
         const text = (el.innerText || el.textContent || '').trim();
-        if (!text || text.length < 3 || text.length > 180) return;
+        if (!text || text.length < 3 || text.length > 140) return;
 
         const normText = normalize(text);
 
@@ -114,27 +140,6 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
         }}
       }});
 
-      // Strategy 2: Scan full page text as fallback
-      if (document.body) {{
-        const fullBodyNorm = normalize(document.body.innerText || '');
-        KNOWN_PLAYERS.forEach(kp => {{
-          const key = normalize(kp.name);
-          if (!seenKeys.has(key)) {{
-            const matched = kp.aliases.some(alias => fullBodyNorm.includes(normalize(alias)));
-            if (matched) {{
-              seenKeys.add(key);
-              picks.push({{
-                pick_no: picks.length + 1,
-                player_name: kp.name,
-                position: kp.pos,
-                team: kp.team,
-                is_user: false
-              }});
-            }}
-          }}
-        }});
-      }}
-
       return picks;
     }} catch (err) {{
       console.warn('[FantasyPoints Relay] parse error:', err);
@@ -150,7 +155,7 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
       timestamp: Date.now()
     }};
 
-    // 1. Send to Extension Background Service Worker (Cross-Tab Router)
+    // 1. Extension Background Router
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {{
       try {{
         chrome.runtime.sendMessage(payload);
@@ -163,7 +168,7 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
       channel.postMessage(payload);
     }} catch(e) {{}}
 
-    // 3. Local postMessage
+    // 3. Window postMessage
     window.postMessage(payload, '*');
   }}
 
@@ -216,4 +221,4 @@ out_path = os.path.join(os.getcwd(), 'underdog-extension', 'content.js')
 with open(out_path, 'w', encoding='utf-8') as f:
     f.write(content_js_template)
 
-print(f"Generated enhanced {out_path} with aliases successfully!")
+print(f"Generated clean queue-filtered {out_path} successfully!")
