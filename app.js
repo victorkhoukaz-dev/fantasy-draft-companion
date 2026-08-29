@@ -2135,10 +2135,12 @@ document.addEventListener('DOMContentLoaded', () => {
   function evaluateRosterNeeds(myRosterSet, currentRound) {
     const counts = { QB: 0, RB: 0, WR: 0, TE: 0, FLEX: 0 };
     const byeMap = {};
+    const myPlayersList = [];
 
     myRosterSet.forEach(key => {
       const p = groupedPlayersMap.get(key);
       if (p) {
+        myPlayersList.push(p);
         if (counts[p.position] !== undefined) counts[p.position]++;
         const bye = TEAM_BYE_WEEKS[p.team];
         if (bye) {
@@ -2149,13 +2151,56 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const urgency = { QB: 1.0, RB: 1.0, WR: 1.0, TE: 1.0 };
     
-    // Dynamic positional need weighting
+    // Mode-Specific Urgency Calibration
+    if (currentPlatformMode === 'underdog') {
+      const structure = evaluateBestBallRosterStructure(myPlayersList);
+      
+      // Best Ball QB Urgency & Caps
+      if (counts.QB >= structure.targets.QB) {
+        urgency.QB = 0.05; // Hard cap on QBs
+      } else if (counts.QB === 0 && currentRound >= 8) {
+        urgency.QB = 1.60;
+      }
+
+      // Best Ball TE Urgency & Caps
+      if (counts.TE >= structure.targets.TE) {
+        urgency.TE = 0.05; // Hard cap on TEs
+      } else if (counts.TE === 0 && currentRound >= 7) {
+        urgency.TE = 1.50;
+      }
+
+      // Best Ball RB Urgency based on Archetype
+      if (counts.RB >= structure.targets.RB) {
+        urgency.RB = 0.05; // Hard cap on RBs
+      } else if (structure.earlyRBsCount >= 2) {
+        // Dual Anchor: Pause on RBs in mid rounds
+        if (currentRound >= 3 && currentRound <= 8 && counts.RB >= 2) urgency.RB = 0.35;
+      } else if (structure.earlyRBsCount === 1) {
+        // Hero RB: Do not draft RB in rounds 3-7
+        if (currentRound >= 3 && currentRound <= 7) urgency.RB = 0.30;
+      } else if (structure.earlyRBsCount === 0) {
+        // Zero RB: Avoid R1-R5, surge in R7+
+        if (currentRound <= 5) urgency.RB = 0.20;
+        else if (currentRound >= 7 && counts.RB < structure.targets.RB) urgency.RB = 1.85;
+      }
+
+      // Best Ball WR Dominance in Rounds 1-8
+      if (counts.WR >= 9) {
+        urgency.WR = 0.05; // Hard cap at 9 WRs
+      } else if (currentRound <= 8 && counts.WR < 5) {
+        urgency.WR = 1.40;
+      }
+
+      return { counts, urgency, byeMap, structure };
+    }
+
+    // Redraft Dynamic positional need weighting
     if (counts.QB === 0 && currentRound >= 6) urgency.QB += (currentRound - 5) * 0.35;
     if (counts.TE === 0 && currentRound >= 5) urgency.TE += (currentRound - 4) * 0.30;
     if (counts.RB < 2 && currentRound >= 3) urgency.RB += (3 - counts.RB) * 0.45;
     if (counts.WR < 3 && currentRound >= 3) urgency.WR += (3 - counts.WR) * 0.40;
     
-    // Saturation dampening
+    // Redraft Saturation dampening
     if (counts.RB >= 4) urgency.RB *= 0.55;
     if (counts.WR >= 5) urgency.WR *= 0.55;
     if (counts.QB >= 2) urgency.QB *= 0.25;
@@ -2175,12 +2220,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 2. Reach & Value Delta Calibration
     const currentPick = turnsInfo.isOnTheClock ? turnsInfo.currentPickNo : (turnsInfo.currentUserPick || turnsInfo.currentPickNo);
-    const reachDelta = currentPick - adp; // negative if reaching (e.g. pick 4 - adp 13 = -9)
+    const reachDelta = currentPick - adp; // negative if reaching
 
     if (reachDelta < 0) {
       const absReach = Math.abs(reachDelta);
       if (turnsInfo.currentRound === 1) {
-        // In Round 1: Gentle penalty for 1-2 slots, exponential brake for reaching > 3-4 slots
         if (absReach <= 2) {
           score -= absReach * 1.5;
         } else if (absReach <= 5) {
@@ -2194,18 +2238,28 @@ document.addEventListener('DOMContentLoaded', () => {
         score -= absReach * 1.3;
       }
     } else {
-      // Value fall bonus (reward taking players falling past market ADP)
       score += Math.min(22, reachDelta * 1.0);
     }
 
-    // 3. Stance Bonus (Capped in early rounds to act as tier-tiebreakers, not draft order overrides)
+    // 3. Stance Bonus (Capped in early rounds to act as tier-tiebreakers)
     const signatureStances = getSignatureStances(player);
     let stancePoints = 0;
-    if (signatureStances.includes('Exodia')) stancePoints += 14;
-    if (signatureStances.includes('The Twelve')) stancePoints += 10;
-    if (signatureStances.includes("Guru's Guys") || signatureStances.includes("Gurus Guys")) stancePoints += 10;
-    if (signatureStances.includes('Must-Draft')) stancePoints += 8;
-    if (signatureStances.includes('Hansen 50') || signatureStances.includes('Hansen-50')) stancePoints += 6;
+    
+    if (currentPlatformMode === 'underdog') {
+      // In Best Ball mode: Redraft Guru takes provide secondary talent conviction (~50% weight)
+      if (signatureStances.includes('Exodia')) stancePoints += 8;
+      if (signatureStances.includes('The Twelve')) stancePoints += 6;
+      if (signatureStances.includes("Guru's Guys") || signatureStances.includes("Gurus Guys")) stancePoints += 6;
+      if (signatureStances.includes('Must-Draft')) stancePoints += 5;
+      if (signatureStances.includes('Hansen 50') || signatureStances.includes('Hansen-50')) stancePoints += 4;
+    } else {
+      // Full weight in Redraft
+      if (signatureStances.includes('Exodia')) stancePoints += 14;
+      if (signatureStances.includes('The Twelve')) stancePoints += 10;
+      if (signatureStances.includes("Guru's Guys") || signatureStances.includes("Gurus Guys")) stancePoints += 10;
+      if (signatureStances.includes('Must-Draft')) stancePoints += 8;
+      if (signatureStances.includes('Hansen 50') || signatureStances.includes('Hansen-50')) stancePoints += 6;
+    }
 
     const consensus = evaluatePlayerConsensus(player);
     if (consensus.type === 'FADE') stancePoints -= 25;
@@ -2216,44 +2270,56 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     score += stancePoints;
 
-    // 4. Early Round Positional Strategy Rules (Rounds 1-3)
-    if (turnsInfo.currentRound <= 3) {
-      if (player.position === 'QB') {
-        // Strict user rule: Anti-early QB
-        score *= 0.45;
-      } else if (player.position === 'TE') {
-        // User rule: Anti-early TE except elite tier (Bowers & McBride)
-        const isAllowedEliteTe = (player.canonical_key === 'brockbowers' || player.canonical_key === 'treymcbride');
-        if (!isAllowedEliteTe) {
-          score *= 0.45;
-        } else {
-          score *= 0.90; // Normal weighting for Bowers/McBride in Round 2-3
+    // 4. Best Ball Stacking & Correlation Bonus
+    if (currentPlatformMode === 'underdog') {
+      const stackContext = computeRosterStackContext(myRosterPlayers, groupedPlayersMap);
+      const stackBadge = getPlayerStackBadge(player, stackContext);
+      if (stackBadge) {
+        if (stackBadge.type === 'Stack') {
+          score += 26; // Major priority: Direct QB <-> Pass-Catcher correlation
+        } else if (stackBadge.type === 'Stack-Partner') {
+          score += 12; // Pass-catcher partner / double stack setup
         }
       }
     }
 
-    // 5. Survival Odds / Tier Cliff Bonus (Disabled for early top-8 picks)
-    const survivalToNext = calculateSurvivalProbability(player.sleeper_adp, turnsInfo.nextUserPick);
-    if (turnsInfo.isOnTheClock || turnsInfo.isOnDeck) {
-      if (currentPick >= 9 && survivalToNext < 0.25 && score > 60) {
-        score += 12; // Tier cliff urgency for mid/late rounds
+    // 5. Early Round Positional Strategy Rules (Rounds 1-3)
+    if (turnsInfo.currentRound <= 3) {
+      if (player.position === 'QB') {
+        // Strict anti-early QB unless elite mobile rushing QB
+        score *= 0.45;
+      } else if (player.position === 'TE') {
+        const isAllowedEliteTe = (player.canonical_key === 'brockbowers' || player.canonical_key === 'treymcbride');
+        if (!isAllowedEliteTe) {
+          score *= 0.45;
+        } else {
+          score *= 0.90;
+        }
       }
     }
 
-    // 6. Positional Need Multiplier
+    // 6. Survival Odds / Tier Cliff Bonus
+    const survivalToNext = calculateSurvivalProbability(player.sleeper_adp, turnsInfo.nextUserPick);
+    if (turnsInfo.isOnTheClock || turnsInfo.isOnDeck) {
+      if (currentPick >= 9 && survivalToNext < 0.25 && score > 60) {
+        score += 12;
+      }
+    }
+
+    // 7. Positional Need Multiplier
     const posMultiplier = rosterNeeds.urgency[player.position] || 1.0;
     score *= posMultiplier;
 
-    // 7. Strategy Profile Adjustments
+    // 8. Strategy Profile Adjustments
     if (strategyMode === 'exodia_hunter') {
       if (signatureStances.length > 0) score *= 1.30;
     } else if (strategyMode === 'hero_rb') {
       if (player.position === 'RB' && rosterNeeds.counts.RB === 0) score *= 1.4;
-      else if (player.position === 'RB' && rosterNeeds.counts.RB >= 1) score *= 0.8;
+      else if (player.position === 'RB' && rosterNeeds.counts.RB >= 1) score *= 0.75;
       else if (player.position === 'WR') score *= 1.2;
     } else if (strategyMode === 'zero_rb') {
       if (player.position === 'WR' && turnsInfo.currentRound <= 6) score *= 1.4;
-      if (player.position === 'RB' && turnsInfo.currentRound <= 5) score *= 0.5;
+      if (player.position === 'RB' && turnsInfo.currentRound <= 5) score *= 0.4;
     }
 
     return {
@@ -2378,9 +2444,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const nextPickStr = turnsInfo.nextUserPick ? `Pick #${turnsInfo.nextUserPick}` : 'your next turn';
 
+    const isBestBall = (currentPlatformMode === 'underdog');
+    const systemRole = isBestBall
+      ? "You are the FantasyPoints AI Underdog Best Ball Tournament Strategist. Your primary directive is enforcing Underdog Best Ball tournament structure (18 rounds: QB 2-3, RB 5-6, WR 7-9, TE 2-3), maximizing stacking correlation (QB <-> WR/TE), and respecting the user's detected archetype (Hero-RB, Zero-RB, Dual-Anchor, Hyper-Fragile). Use FantasyPoints analyst guru takes (Scott Barrett, John Hansen) for secondary talent conviction."
+      : "You are the FantasyPoints AI Chief Draft Strategist. You provide decisive, high-IQ draft recommendations grounded strictly in Scott Barrett and John Hansen analytics and the provided FantasyPoints database. Do NOT hallucinate generic web takes or make assumptions outside the provided expert quotes.";
+
+    const userRules = isBestBall
+      ? `Best Ball Tournament Rules: Strictly adhere to positional caps (QB: ${rosterNeeds.structure?.targets?.QB || '2-3'}, RB: ${rosterNeeds.structure?.targets?.RB || '5-6'}, WR: ${rosterNeeds.structure?.targets?.WR || '7-9'}, TE: ${rosterNeeds.structure?.targets?.TE || '2-3'}). Prioritize stacking quarterbacks with their pass-catchers. Current Archetype: ${rosterNeeds.structure?.archetype || 'Balanced Best Ball'}.`
+      : "Strict anti-early-QB policy in Rounds 1-3. Deprioritize early TEs in Rounds 1-3 except elite targets Brock Bowers and Trey McBride.";
+
     const promptPayload = {
-      system_role: "You are the FantasyPoints AI Chief Draft Strategist. You provide decisive, high-IQ draft recommendations grounded strictly in Scott Barrett and John Hansen analytics and the provided FantasyPoints database. Do NOT hallucinate generic web takes or make assumptions outside the provided expert quotes.",
-      user_draft_strategy_rules: "Strict anti-early-QB policy in Rounds 1-3. Deprioritize early TEs in Rounds 1-3 except elite targets Brock Bowers and Trey McBride.",
+      system_role: systemRole,
+      user_draft_strategy_rules: userRules,
+      format: isBestBall ? "Underdog Best Ball (0.5 PPR - 18 Rounds)" : "Sleeper Redraft (1.0 PPR - 15 Rounds)",
       draft_state: {
         current_pick: turnsInfo.currentPickNo,
         current_round: turnsInfo.currentRound,
@@ -2390,12 +2466,13 @@ document.addEventListener('DOMContentLoaded', () => {
         next_turn_pick_number: turnsInfo.nextUserPick,
         intervening_picks_between_turns: turnsInfo.interveningPicks,
         current_roster_counts: rosterNeeds.counts,
-        strategy_mode: aiStrategyMode
+        strategy_mode: aiStrategyMode,
+        roster_structure: isBestBall ? rosterNeeds.structure : null
       },
       immediate_current_turn_candidates: immediatePayload,
       viable_lookahead_candidates_for_next_turn: lookaheadPayload,
       instructions: `Give a concise 2 to 3 sentence tactical draft recommendation:
-1) Immediate Pick: Choose the best player from 'immediate_current_turn_candidates' and cite specific Scott Barrett or John Hansen takes.
+1) Immediate Pick: Choose the best player from 'immediate_current_turn_candidates' and cite specific analytical rationale or stacking synergy.
 2) Next Turn (${nextPickStr}): You MUST ONLY recommend players from 'viable_lookahead_candidates_for_next_turn' (who have high survival odds). NEVER suggest a top player with near-0% survival odds (like a Round 1 player) for a later turn.
 3) Backup Pivot: Name one pivot option from 'immediate_current_turn_candidates' if the primary target is taken.`
     };
@@ -2481,9 +2558,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const lookaheadPayload = topCandidates.filter(c => c.survivalToNext >= 0.40).slice(0, 5).map(mapCandidateToPayload);
     const nextPickStr = turnsInfo.nextUserPick ? `Pick #${turnsInfo.nextUserPick}` : 'your next turn';
 
+    const isBestBall = (currentPlatformMode === 'underdog');
+    const systemRole = isBestBall
+      ? "You are the FantasyPoints AI Underdog Best Ball Tournament Strategist. Your primary directive is enforcing Underdog Best Ball tournament structure (18 rounds: QB 2-3, RB 5-6, WR 7-9, TE 2-3), maximizing stacking correlation (QB <-> WR/TE), and respecting the user's detected archetype (Hero-RB, Zero-RB, Dual-Anchor, Hyper-Fragile). Use FantasyPoints analyst guru takes (Scott Barrett, John Hansen) for secondary talent conviction."
+      : "You are the FantasyPoints AI Chief Draft Strategist. You provide decisive, high-IQ draft recommendations grounded strictly in Scott Barrett and John Hansen analytics and the provided FantasyPoints database. Do NOT hallucinate generic web takes or make assumptions outside the provided expert quotes.";
+
+    const userRules = isBestBall
+      ? `Best Ball Tournament Rules: Strictly adhere to positional caps (QB: ${rosterNeeds.structure?.targets?.QB || '2-3'}, RB: ${rosterNeeds.structure?.targets?.RB || '5-6'}, WR: ${rosterNeeds.structure?.targets?.WR || '7-9'}, TE: ${rosterNeeds.structure?.targets?.TE || '2-3'}). Prioritize stacking quarterbacks with their pass-catchers. Current Archetype: ${rosterNeeds.structure?.archetype || 'Balanced Best Ball'}.`
+      : "Strict anti-early-QB policy in Rounds 1-3. Deprioritize early TEs in Rounds 1-3 except elite targets Brock Bowers and Trey McBride.";
+
     const promptPayload = {
-      system_role: "You are the FantasyPoints AI Chief Draft Strategist. You provide decisive, high-IQ draft recommendations grounded strictly in Scott Barrett and John Hansen analytics and the provided FantasyPoints database. Do NOT hallucinate generic web takes or make assumptions outside the provided expert quotes.",
-      user_draft_strategy_rules: "Strict anti-early-QB policy in Rounds 1-3. Deprioritize early TEs in Rounds 1-3 except elite targets Brock Bowers and Trey McBride.",
+      system_role: systemRole,
+      user_draft_strategy_rules: userRules,
+      format: isBestBall ? "Underdog Best Ball (0.5 PPR - 18 Rounds)" : "Sleeper Redraft (1.0 PPR - 15 Rounds)",
       draft_state: {
         current_pick: turnsInfo.currentPickNo,
         current_round: turnsInfo.currentRound,
@@ -2493,12 +2580,13 @@ document.addEventListener('DOMContentLoaded', () => {
         next_turn_pick_number: turnsInfo.nextUserPick,
         intervening_picks_between_turns: turnsInfo.interveningPicks,
         current_roster_counts: rosterNeeds.counts,
-        strategy_mode: aiStrategyMode
+        strategy_mode: aiStrategyMode,
+        roster_structure: isBestBall ? rosterNeeds.structure : null
       },
       immediate_current_turn_candidates: immediatePayload,
       viable_lookahead_candidates_for_next_turn: lookaheadPayload,
       instructions: `Give a concise 2 to 3 sentence tactical draft recommendation:
-1) Immediate Pick: Choose the best player from 'immediate_current_turn_candidates' and cite specific Scott Barrett or John Hansen takes.
+1) Immediate Pick: Choose the best player from 'immediate_current_turn_candidates' and cite specific analytical rationale or stacking synergy.
 2) Next Turn (${nextPickStr}): You MUST ONLY recommend players from 'viable_lookahead_candidates_for_next_turn' (who have high survival odds). NEVER suggest a top player with near-0% survival odds (like a Round 1 player) for a later turn.
 3) Backup Pivot: Name one pivot option from 'immediate_current_turn_candidates' if the primary target is taken.`
     };
