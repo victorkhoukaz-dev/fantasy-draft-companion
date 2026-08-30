@@ -4,5 +4,11 @@
     "size": 13342495,
     "take_count": 65,
     "ingested_at": "2026-08-28 21:26:25"
+  },
+  "rankings.best-ball.underdog.csv": {
+    "mtime": 1788059528.4722097,
+    "size": 21135,
+    "take_count": 243,
+    "ingested_at": "2026-08-30 11:06:32"
   }
 }
