@@ -58,6 +58,7 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
   const KNOWN_PLAYERS = {players_json};
   let lastPicksCount = -1;
   let syncStatusEl = null;
+  let userSelectedSlot = parseInt(localStorage.getItem('fp_relay_slot') || '0', 10) || null;
 
   function initBadge() {{
     if (document.getElementById('fp-ud-sync-badge')) {{
@@ -70,14 +71,24 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     syncStatusEl.id = 'fp-ud-sync-badge';
     syncStatusEl.style.cssText = 'position: fixed; bottom: 16px; right: 16px; z-index: 9999999; background: #0f172a; border: 1px solid #10b981; color: #6ee7b7; padding: 7px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,0.6); display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; transition: all 0.2s ease;';
     syncStatusEl.innerHTML = '<span>🟢</span><span>FantasyPoints: Active</span>';
-    syncStatusEl.title = 'Click to inspect detected picks and username';
+    syncStatusEl.title = 'Click to set your draft slot or inspect sync';
     
     syncStatusEl.addEventListener('click', () => {{
-      const picks = parseDraftPicks();
-      const username = getLoggedInUsername();
-      console.log('[FantasyPoints Relay] Username detected:', username);
-      console.log('[FantasyPoints Relay] Current Detected Picks (' + picks.length + '):', picks);
-      if (picks.length > 0) console.table(picks);
+      const current = userSelectedSlot || 'Auto';
+      const promptVal = prompt('🏈 FantasyPoints Underdog Relay\\n\\nEnter your Draft Slot (1-12) to guarantee your picks sync to "My Roster":\\n(Current: ' + current + ')', userSelectedSlot || '');
+      if (promptVal !== null) {{
+        const slotNum = parseInt(promptVal, 10);
+        if (slotNum >= 1 && slotNum <= 12) {{
+          userSelectedSlot = slotNum;
+          localStorage.setItem('fp_relay_slot', String(slotNum));
+          alert('Draft Slot set to: Slot ' + slotNum + '. All picks in Column ' + slotNum + ' will sync to My Roster!');
+        }} else {{
+          userSelectedSlot = null;
+          localStorage.removeItem('fp_relay_slot');
+          alert('Draft Slot set to Auto-Detect.');
+        }}
+        tick();
+      }}
     }});
 
     document.body.appendChild(syncStatusEl);
@@ -94,6 +105,7 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
 
   function getLoggedInUsername() {{
     try {{
+      // 1. Look for account avatar / header button
       const userNav = document.querySelector('[data-testid*="user"], [class*="UserMenu"], [class*="user-menu"], [class*="Header_username"], [class*="ProfileButton"], [aria-label*="Account"], [aria-label*="Profile"]');
       if (userNav) {{
         const text = (userNav.innerText || userNav.getAttribute('aria-label') || '').trim();
@@ -101,6 +113,7 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
           return text.replace(/Account/i, '').replace(/Profile/i, '').trim().toLowerCase();
         }}
       }}
+      // 2. Scan localStorage for auth / session username
       for (let i = 0; i < localStorage.length; i++) {{
         const k = localStorage.key(i);
         if (k && (k.includes('user') || k.includes('auth') || k.includes('session') || k.includes('profile'))) {{
@@ -143,8 +156,30 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     return false;
   }}
 
-  function isInsideUserContainer(el, username) {{
+  function getColumnIndex(el) {{
+    let cur = el;
+    while (cur && cur !== document.body) {{
+      if (cur.parentElement) {{
+        const siblings = Array.from(cur.parentElement.children);
+        if (siblings.length >= 10 && siblings.length <= 14) {{
+          const idx = siblings.indexOf(cur);
+          if (idx >= 0 && idx < 12) {{
+            return idx + 1; // 1-indexed (1 to 12)
+          }}
+        }}
+      }}
+      cur = cur.parentElement;
+    }}
+    return null;
+  }}
+
+  function isInsideUserContainer(el, username, colSlot) {{
     if (!el || isInsideAvailableQueue(el)) return false;
+
+    if (userSelectedSlot && colSlot === userSelectedSlot) {{
+      return true;
+    }}
+
     let cur = el;
     let depth = 0;
     while (cur && cur !== document.body && depth < 10) {{
@@ -163,7 +198,6 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
       }}
 
       if (username && username.length > 2) {{
-        // Match username in column header or owner badge
         if (text.toLowerCase().includes(username) || cls.includes(username)) {{
           return true;
         }}
@@ -231,12 +265,14 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
           if (!seenKeys.has(key)) {{
             seenKeys.add(key);
 
-            const isUser = isInsideUserContainer(el, username);
+            const colSlot = getColumnIndex(el);
+            const isUser = isInsideUserContainer(el, username, colSlot);
 
             picks.push({{
               player_name: matchedPlayer.name,
               position: matchedPlayer.pos,
               team: matchedPlayer.team,
+              slot: colSlot,
               is_user: Boolean(isUser)
             }});
           }}
@@ -254,6 +290,7 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     const payload = {{
       type: 'UNDERDOG_PICKS_SYNC',
       draft_id: draftId,
+      user_slot: userSelectedSlot,
       picks: picks,
       timestamp: Date.now()
     }};
@@ -284,7 +321,8 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
       if (syncStatusEl) {{
         if (picks.length > 0) {{
           const userPicksCount = picks.filter(p => p.is_user).length;
-          syncStatusEl.innerHTML = '<span>🟢</span><span>FantasyPoints: Syncing (#' + picks.length + ' picks' + (userPicksCount > 0 ? ', ' + userPicksCount + ' mine' : '') + ')</span>';
+          const slotLabel = userSelectedSlot ? ' [Slot ' + userSelectedSlot + ']' : '';
+          syncStatusEl.innerHTML = '<span>🟢</span><span>FantasyPoints: Syncing (#' + picks.length + ' picks' + (userPicksCount > 0 ? ', ' + userPicksCount + ' mine' : '') + slotLabel + ')</span>';
           syncStatusEl.style.borderColor = '#10b981';
         }} else {{
           syncStatusEl.innerHTML = '<span>🟡</span><span>FantasyPoints: Relay Ready</span>';
@@ -320,4 +358,4 @@ out_path = os.path.join(os.getcwd(), 'underdog-extension', 'content.js')
 with open(out_path, 'w', encoding='utf-8') as f:
     f.write(content_js_template)
 
-print(f"Generated collision-free, draft-board-aware {out_path} successfully!")
+print(f"Generated slot-aware, draft-board-aware {out_path} successfully!")

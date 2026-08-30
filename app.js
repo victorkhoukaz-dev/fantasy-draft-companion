@@ -2044,6 +2044,8 @@ document.addEventListener('DOMContentLoaded', () => {
       loadPlatformData('underdog');
     }
 
+    const effectiveSlot = myUdDraftSlot || data.user_slot;
+
     let hasNewPicks = false;
 
     picks.forEach(p => {
@@ -2056,7 +2058,7 @@ document.addEventListener('DOMContentLoaded', () => {
           canonical_key: canonicalKey,
           player_name: p.player_name,
           position: p.position || 'FLEX',
-          team: 'NFL',
+          team: p.team || 'NFL',
           sleeper_adp: 999,
           pos_rank: '—',
           pos_num: 99,
@@ -2066,7 +2068,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
 
-      const isUser = Boolean(p.is_user);
+      const isUser = Boolean(p.is_user) || Boolean(effectiveSlot && p.slot && p.slot === effectiveSlot);
 
       if (isUser && !manuallyRemovedFromRoster.has(canonicalKey)) {
         if (!myRosterPlayers.has(canonicalKey)) {
@@ -2095,7 +2097,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (openDraftSyncBtn && draftSyncLabel) {
       openDraftSyncBtn.classList.add('syncing');
       if (draftSyncIcon) draftSyncIcon.textContent = '🐶';
-      draftSyncLabel.textContent = `UD Live: #${picks.length}`;
+      const slotStr = effectiveSlot ? ` (Slot ${effectiveSlot})` : '';
+      draftSyncLabel.textContent = `UD Live: #${picks.length}${slotStr}`;
     }
   }
 
