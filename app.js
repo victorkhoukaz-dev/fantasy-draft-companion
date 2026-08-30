@@ -2474,7 +2474,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 6. Survival Odds / Tier Cliff Bonus
     const survivalToNext = calculateSurvivalProbability(player.sleeper_adp, turnsInfo.nextUserPick);
     if (turnsInfo.isOnTheClock || turnsInfo.isOnDeck) {
-      if (currentPick >= 9 && survivalToNext < 0.25 && score > 60) {
+      if (targetPick >= 9 && survivalToNext < 0.25 && score > 60) {
         score += 12;
       }
     }
