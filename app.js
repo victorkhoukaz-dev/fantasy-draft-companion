@@ -2033,10 +2033,24 @@ document.addEventListener('DOMContentLoaded', () => {
     return (r % 2 === 1) ? (posInRound + 1) : (totalTeams - posInRound);
   }
 
+  let lastUnderdogDraftId = null;
+
   function handleIncomingUnderdogPicks(data) {
     isUnderdogRelayConnected = true;
     const picks = data.picks;
     if (!picks || picks.length === 0) return;
+
+    let hasNewPicks = false;
+
+    // If new draft room detected, clear old draft state automatically
+    if (data.draft_id && lastUnderdogDraftId && data.draft_id !== lastUnderdogDraftId) {
+      console.log('[Underdog Relay] Switching to new draft room:', data.draft_id);
+      myRosterPlayers.clear();
+      otherDraftedPlayers.clear();
+      manuallyRemovedFromRoster.clear();
+      hasNewPicks = true;
+    }
+    if (data.draft_id) lastUnderdogDraftId = data.draft_id;
 
     if (data.user_slot && (!myUdDraftSlot || myUdDraftSlot !== data.user_slot)) {
       myUdDraftSlot = data.user_slot;
@@ -2045,8 +2059,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const effectiveSlot = myUdDraftSlot || data.user_slot;
-
-    let hasNewPicks = false;
 
     picks.forEach(p => {
       const canonicalKey = getCanonicalNameKey(p.player_name);
