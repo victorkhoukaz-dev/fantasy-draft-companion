@@ -1,31 +1,50 @@
 import os
 import json
+import re
 
 adp_path = os.path.join(os.getcwd(), 'underdog_adp.json')
 with open(adp_path, 'r', encoding='utf-8') as f:
     adp_data = json.load(f)
 
-player_list = []
 players_dict = adp_data.get('players', {})
+
+def normalize(str_val):
+    return re.sub(r'[^a-z0-9]', '', (str_val or '').lower())
+
+# Check short name collisions
+short_counts = {}
 for p in players_dict.values():
     full_name = p['full_name']
-    
-    clean_name = full_name.replace("'", "").replace("’", "").replace(".", "").strip()
-    no_suffix = full_name.replace(" Jr.", "").replace(" Jr", "").replace(" III", "").replace(" II", "").replace(" Sr.", "").replace(" Sr", "").strip()
+    parts = full_name.split()
+    short = f"{parts[0][0]}. {' '.join(parts[1:])}" if len(parts) > 1 else full_name
+    norm_short = normalize(short)
+    short_counts[norm_short] = short_counts.get(norm_short, 0) + 1
+
+player_list = []
+for p in players_dict.values():
+    full_name = p['full_name']
+    no_suffix = re.sub(r'(?i)\b(jr\.?|sr\.?|iii|ii|iv)\b', '', full_name).strip()
     
     parts = full_name.split()
     short_name = f"{parts[0][0]}. {' '.join(parts[1:])}" if len(parts) > 1 else full_name
     short_no_suffix = f"{parts[0][0]}. {' '.join(no_suffix.split()[1:])}" if len(no_suffix.split()) > 1 else short_name
-
-    aliases = list(set([full_name, clean_name, no_suffix, short_name, short_no_suffix]))
+    
+    norm_short = normalize(short_name)
+    is_ambiguous = short_counts.get(norm_short, 0) > 1
 
     player_list.append({
         'name': full_name,
-        'aliases': aliases,
-        'pos': p.get('position', 'FLEX'),
-        'team': p.get('team', 'NFL')
+        'clean': normalize(full_name),
+        'no_suffix': normalize(no_suffix),
+        'short': norm_short,
+        'short_no_suffix': normalize(short_no_suffix),
+        'is_ambiguous': is_ambiguous,
+        'pos': p.get('position', 'FLEX').upper(),
+        'team': p.get('team', 'NFL').upper()
     })
 
+# Sort players by clean name length descending so longer specific names match first
+player_list.sort(key=lambda x: len(x['clean']), reverse=True)
 players_json = json.dumps(player_list)
 
 content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
@@ -51,7 +70,7 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     syncStatusEl.id = 'fp-ud-sync-badge';
     syncStatusEl.style.cssText = 'position: fixed; bottom: 16px; right: 16px; z-index: 9999999; background: #0f172a; border: 1px solid #10b981; color: #6ee7b7; padding: 7px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,0.6); display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; transition: all 0.2s ease;';
     syncStatusEl.innerHTML = '<span>🟢</span><span>FantasyPoints: Active</span>';
-    syncStatusEl.title = 'Click to inspect detected picks';
+    syncStatusEl.title = 'Click to inspect detected picks and username';
     
     syncStatusEl.addEventListener('click', () => {{
       const picks = parseDraftPicks();
@@ -124,27 +143,27 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     return false;
   }}
 
-  function isUserElement(el, username) {{
+  function isInsideUserContainer(el, username) {{
     if (!el || isInsideAvailableQueue(el)) return false;
     let cur = el;
     let depth = 0;
-    while (cur && cur !== document.body && depth < 8) {{
+    while (cur && cur !== document.body && depth < 10) {{
       const text = (cur.innerText || cur.textContent || '');
       const cls = (typeof cur.className === 'string' ? cur.className : '').toLowerCase();
       const testId = (cur.getAttribute && cur.getAttribute('data-testid') || '').toLowerCase();
       const aria = (cur.getAttribute && cur.getAttribute('aria-label') || '').toLowerCase();
 
+      // Check explicit user indicators on the column or parent container
       if (
-        text.includes('(You)') || text.includes('(YOU)') ||
-        cls.includes('user-pick') || cls.includes('mypick') || cls.includes('is-user') ||
-        cls.includes('isuser') || cls.includes('my-team') ||
-        testId.includes('my-pick') || testId.includes('user-pick') ||
-        aria.includes('my team')
+        text.includes('(You)') || text.includes('(YOU)') || text.includes('My Team') ||
+        cls.includes('my-team') || cls.includes('user-pick') || cls.includes('is-user') ||
+        testId.includes('my-team') || testId.includes('user-pick') || aria.includes('my team')
       ) {{
         return true;
       }}
 
       if (username && username.length > 2) {{
+        // Match username in column header or owner badge
         if (text.toLowerCase().includes(username) || cls.includes(username)) {{
           return true;
         }}
@@ -156,47 +175,70 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     return false;
   }}
 
+  function matchPlayerInText(normText, rawUpperText) {{
+    for (let i = 0; i < KNOWN_PLAYERS.length; i++) {{
+      const kp = KNOWN_PLAYERS[i];
+      
+      // 1. Exact Full Name Match (e.g. "malikwashington", "brianrobinson", "bijanrobinson")
+      if (normText.includes(kp.clean)) {{
+        return kp;
+      }}
+      
+      // 2. Name without Suffix Match (e.g. "brianthomas", "tyronetracy", "marvinharrison")
+      if (kp.no_suffix.length > 5 && normText.includes(kp.no_suffix)) {{
+        return kp;
+      }}
+
+      // 3. Unambiguous Short Initial Match (e.g. "p. nacua", "j. gibbs")
+      if (!kp.is_ambiguous && kp.short.length > 4 && normText.includes(kp.short)) {{
+        return kp;
+      }}
+
+      // 4. Ambiguous Short Initial Match WITH Team or Position Verification (e.g. "b. robinson" + "ATL" or "WAS")
+      if (kp.is_ambiguous && (normText.includes(kp.short) || normText.includes(kp.short_no_suffix))) {{
+        if (rawUpperText.includes(kp.team) || rawUpperText.includes(kp.pos)) {{
+          return kp;
+        }}
+      }}
+    }}
+    return null;
+  }}
+
   function parseDraftPicks() {{
     try {{
       const picks = [];
       const seenKeys = new Set();
       const username = getLoggedInUsername();
-      
-      // Target board cells, completed pick rows, and pick cards across the entire room
-      const allElements = document.querySelectorAll('*');
 
-      allElements.forEach(el => {{
+      // Scan all potential pick cells, columns, and board tiles
+      const candidateElements = document.querySelectorAll(
+        '[class*="board"] div, [class*="Board"] div, [class*="grid"] div, [class*="Grid"] div, [class*="column"] div, [class*="Column"] div, [class*="card"], [class*="Card"], [class*="tile"], [class*="Tile"], [class*="pick"], [class*="Pick"], [data-testid*="pick"], [data-testid*="cell"], div'
+      );
+
+      candidateElements.forEach(el => {{
         if (isInsideAvailableQueue(el)) return;
         if (el.children.length > 8) return;
 
         const text = (el.innerText || el.textContent || '').trim();
-        if (!text || text.length < 3 || text.length > 200) return;
+        if (!text || text.length < 3 || text.length > 160) return;
 
         const normText = normalize(text);
+        const rawUpper = text.toUpperCase();
 
-        for (let i = 0; i < KNOWN_PLAYERS.length; i++) {{
-          const kp = KNOWN_PLAYERS[i];
-          const matched = kp.aliases.some(alias => {{
-            const normAlias = normalize(alias);
-            return normText.includes(normAlias);
-          }});
+        const matchedPlayer = matchPlayerInText(normText, rawUpper);
+        if (matchedPlayer) {{
+          const key = normalize(matchedPlayer.name);
+          if (!seenKeys.has(key)) {{
+            seenKeys.add(key);
 
-          if (matched) {{
-            const key = normalize(kp.name);
-            if (!seenKeys.has(key)) {{
-              seenKeys.add(key);
-              
-              const isUser = isUserElement(el, username);
+            const isUser = isInsideUserContainer(el, username);
 
-              picks.push({{
-                pick_no: picks.length + 1,
-                player_name: kp.name,
-                position: kp.pos,
-                team: kp.team,
-                is_user: Boolean(isUser)
-              }});
-            }}
-            break;
+            picks.push({{
+              player_name: matchedPlayer.name,
+              position: matchedPlayer.pos,
+              team: matchedPlayer.team,
+              is_user: Boolean(isUser)
+            }});
           }}
         }}
       }});
@@ -278,4 +320,4 @@ out_path = os.path.join(os.getcwd(), 'underdog-extension', 'content.js')
 with open(out_path, 'w', encoding='utf-8') as f:
     f.write(content_js_template)
 
-print(f"Generated clean full-board {out_path} successfully!")
+print(f"Generated collision-free, draft-board-aware {out_path} successfully!")

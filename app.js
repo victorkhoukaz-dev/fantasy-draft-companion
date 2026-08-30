@@ -1204,13 +1204,18 @@ document.addEventListener('DOMContentLoaded', () => {
     return row;
   }
 
+  const manuallyRemovedFromRoster = new Set();
+
   // Toggle Player Drafted for MY Team
   function toggleDraftForMe(canonicalKey) {
     if (myRosterPlayers.has(canonicalKey)) {
       myRosterPlayers.delete(canonicalKey);
+      otherDraftedPlayers.add(canonicalKey);
+      manuallyRemovedFromRoster.add(canonicalKey);
     } else {
       myRosterPlayers.add(canonicalKey);
       otherDraftedPlayers.delete(canonicalKey);
+      manuallyRemovedFromRoster.delete(canonicalKey);
     }
     passedSuggestionsSet.clear();
     saveDraftStates();
@@ -2061,17 +2066,16 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
 
-      const pickSlot = getSnakePickSlot(p.pick_no, 12);
-      const isUser = p.is_user || (myUdDraftSlot && pickSlot === myUdDraftSlot);
+      const isUser = Boolean(p.is_user);
 
-      if (isUser) {
+      if (isUser && !manuallyRemovedFromRoster.has(canonicalKey)) {
         if (!myRosterPlayers.has(canonicalKey)) {
           myRosterPlayers.add(canonicalKey);
           otherDraftedPlayers.delete(canonicalKey);
           hasNewPicks = true;
         }
       } else {
-        // Only mark as other drafted if not already on MY roster!
+        // Mark as other drafted (only if not already on MY roster)
         if (!myRosterPlayers.has(canonicalKey)) {
           if (!otherDraftedPlayers.has(canonicalKey)) {
             otherDraftedPlayers.add(canonicalKey);
