@@ -48,7 +48,7 @@ player_list.sort(key=lambda x: len(x['clean']), reverse=True)
 players_json = json.dumps(player_list)
 
 content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
-// Seamlessly syncs live picks from Underdog Fantasy draft rooms into the FantasyPoints Draft Companion
+// Ultra-lightweight, zero-lag live pick scanner for Underdog Fantasy draft rooms
 
 (function() {{
   'use strict';
@@ -58,7 +58,7 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
   const KNOWN_PLAYERS = {players_json};
   let lastPicksCount = -1;
   let syncStatusEl = null;
-  let userSelectedSlot = parseInt(localStorage.getItem('fp_relay_slot') || '0', 10) || null;
+  let isScanning = false;
 
   function initBadge() {{
     if (document.getElementById('fp-ud-sync-badge')) {{
@@ -97,50 +97,27 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   }}
 
+  // Fast, instant leaf text node search to find the user's right roster panel
   function findUserRosterPanel() {{
-    const allDivs = document.querySelectorAll('div, section, aside');
-    for (let i = 0; i < allDivs.length; i++) {{
-      const el = allDivs[i];
-      const text = (el.innerText || el.textContent || '').toLowerCase();
-      if (text.includes('pick position') || (text.includes('projected') && text.includes('qb') && text.includes('rb'))) {{
-        const r = el.getBoundingClientRect();
-        if (r.width > 120 && r.height > 150) {{
-          return el;
+    if (!document.body) return null;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+    let node;
+    while ((node = walker.nextNode())) {{
+      const val = node.nodeValue || '';
+      if (val.includes('Pick position') || val.includes('pick position')) {{
+        let cur = node.parentElement;
+        let depth = 0;
+        while (cur && cur !== document.body && depth < 7) {{
+          const r = cur.getBoundingClientRect();
+          if (r.width > 120 && r.width < 500 && r.height > 150) {{
+            return cur;
+          }}
+          cur = cur.parentElement;
+          depth++;
         }}
       }}
     }}
     return null;
-  }}
-
-  function isInsideAvailableQueue(el) {{
-    let cur = el;
-    while (cur && cur !== document.body) {{
-      const cls = (typeof cur.className === 'string' ? cur.className : '').toLowerCase();
-      const id = (cur.id || '').toLowerCase();
-      const testId = (cur.getAttribute && cur.getAttribute('data-testid') || '').toLowerCase();
-      const aria = (cur.getAttribute && cur.getAttribute('aria-label') || '').toLowerCase();
-      
-      // Do NOT filter out roster panel even if it has some generic classes
-      const text = (cur.innerText || '').toLowerCase();
-      if (text.includes('pick position') || text.includes('projected')) {{
-        return false;
-      }}
-
-      if (
-        cls.includes('playerlist') || cls.includes('player-list') || 
-        cls.includes('available') || cls.includes('rankings') || cls.includes('ranking') ||
-        cls.includes('search') || cls.includes('queue') ||
-        id.includes('player-list') || id.includes('playerlist') ||
-        id.includes('available') || id.includes('search') || id.includes('queue') ||
-        testId.includes('player-list') || testId.includes('playerlist') ||
-        testId.includes('available') || testId.includes('search') || testId.includes('queue') ||
-        aria.includes('available') || aria.includes('search') || aria.includes('queue')
-      ) {{
-        return true;
-      }}
-      cur = cur.parentElement;
-    }}
-    return false;
   }}
 
   function matchPlayerInText(normText, rawUpperText) {{
@@ -178,14 +155,14 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
       const seenKeys = new Set();
       const myRosterKeys = new Set();
 
-      // Step 1: Scan the User Roster Panel on the right (100% Guaranteed User Picks)
+      // Step 1: Scan ONLY the dedicated User Roster Panel on the right (100% Guaranteed User Picks)
       const rosterPanel = findUserRosterPanel();
       if (rosterPanel) {{
-        const rosterElements = rosterPanel.querySelectorAll('div, li, p, span, tr');
-        rosterElements.forEach(el => {{
-          if (el.children.length > 6) return;
-          const text = (el.innerText || el.textContent || '').trim();
-          if (!text || text.length < 3 || text.length > 120) return;
+        const textNodes = rosterPanel.querySelectorAll('div, li, p, span');
+        textNodes.forEach(el => {{
+          if (el.children.length > 4) return;
+          const text = (el.textContent || '').trim();
+          if (!text || text.length < 3 || text.length > 100) return;
 
           const normText = normalize(text);
           const rawUpper = text.toUpperCase();
@@ -207,17 +184,15 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
         }});
       }}
 
-      // Step 2: Scan all other completed picks in the room (Top Ticker, Board, History)
-      const allElements = document.querySelectorAll(
-        '[class*="ticker"] div, [class*="Ticker"] div, [class*="carousel"] div, [class*="Carousel"] div, [class*="board"] div, [class*="Board"] div, [class*="grid"] div, [class*="Grid"] div, [class*="column"] div, [class*="Column"] div, [class*="card"], [class*="Card"], [class*="tile"], [class*="Tile"], [class*="pick"], [class*="Pick"], [data-testid*="pick"], [data-testid*="cell"], div'
+      // Step 2: Scan Top Completed Ticker and Board Pick Cells (Other Drafted Players)
+      const tickerElements = document.querySelectorAll(
+        '[class*="ticker"] div, [class*="Ticker"] div, [class*="carousel"] div, [class*="Carousel"] div, [class*="board"] div, [class*="Board"] div, [class*="pickCard"], [class*="DraftPick"], [data-testid*="pick"]'
       );
 
-      allElements.forEach(el => {{
-        if (isInsideAvailableQueue(el)) return;
-        if (el.children.length > 8) return;
-
-        const text = (el.innerText || el.textContent || '').trim();
-        if (!text || text.length < 3 || text.length > 160) return;
+      tickerElements.forEach(el => {{
+        if (el.children.length > 6) return;
+        const text = (el.textContent || '').trim();
+        if (!text || text.length < 3 || text.length > 120) return;
 
         const normText = normalize(text);
         const rawUpper = text.toUpperCase();
@@ -267,6 +242,8 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
   }}
 
   function tick() {{
+    if (isScanning) return;
+    isScanning = true;
     try {{
       if (!syncStatusEl && document.body) {{
         initBadge();
@@ -288,16 +265,18 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
 
       if (picks.length !== lastPicksCount && picks.length > 0) {{
         lastPicksCount = picks.length;
-        console.log('[FantasyPoints Relay] Broadcasting ' + picks.length + ' Underdog picks to Companion...', picks);
+        console.log('[FantasyPoints Relay] Broadcasting ' + picks.length + ' Underdog picks (' + picks.filter(p=>p.is_user).length + ' mine)...', picks);
         sendPicks(picks, draftId);
       }}
     }} catch (err) {{
       console.warn('[FantasyPoints Relay] tick error:', err);
+    }} finally {{
+      isScanning = false;
     }}
   }}
 
-  setInterval(tick, 800);
-  setTimeout(tick, 500);
+  setInterval(tick, 1200);
+  setTimeout(tick, 400);
 
   if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {{
     chrome.runtime.onMessage.addListener((msg) => {{
@@ -314,4 +293,4 @@ out_path = os.path.join(os.getcwd(), 'underdog-extension', 'content.js')
 with open(out_path, 'w', encoding='utf-8') as f:
     f.write(content_js_template)
 
-print(f"Generated panel-aware {out_path} successfully!")
+print(f"Generated ultra-fast {out_path} successfully!")
