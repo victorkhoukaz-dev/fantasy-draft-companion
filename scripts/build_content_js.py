@@ -103,11 +103,19 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
       const cls = (typeof cur.className === 'string' ? cur.className : '').toLowerCase();
       const id = (cur.id || '').toLowerCase();
       const testId = (cur.getAttribute && cur.getAttribute('data-testid') || '').toLowerCase();
+      const aria = (cur.getAttribute && cur.getAttribute('aria-label') || '').toLowerCase();
       
       if (
-        cls.includes('playerlist') || cls.includes('player-list') || cls.includes('available-player') ||
-        testId.includes('player-list') || testId.includes('available-players') || testId.includes('draft-queue') ||
-        id.includes('player-list') || id.includes('draft-queue')
+        cls.includes('queue') || cls.includes('playerlist') || cls.includes('player-list') || 
+        cls.includes('available') || cls.includes('rankings') || cls.includes('ranking') ||
+        cls.includes('search') || cls.includes('drawer') || cls.includes('watch') ||
+        cls.includes('favorite') || cls.includes('star') || cls.includes('autopick') ||
+        id.includes('queue') || id.includes('player-list') || id.includes('playerlist') ||
+        id.includes('available') || id.includes('search') || id.includes('drawer') ||
+        testId.includes('queue') || testId.includes('player-list') || testId.includes('playerlist') ||
+        testId.includes('available') || testId.includes('search') || testId.includes('draft-queue') ||
+        aria.includes('queue') || aria.includes('available') || aria.includes('search') ||
+        aria.includes('star') || aria.includes('watch')
       ) {{
         return true;
       }}
@@ -117,7 +125,7 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
   }}
 
   function isUserElement(el, username) {{
-    if (!el) return false;
+    if (!el || isInsideAvailableQueue(el)) return false;
     let cur = el;
     let depth = 0;
     while (cur && cur !== document.body && depth < 8) {{
