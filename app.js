@@ -3046,49 +3046,53 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Update AI Advisor Pipeline
   async function updateAiDraftAdvisor(forceDeepReason = false) {
-    if (!groupedPlayersMap || groupedPlayersMap.size === 0) return;
+    try {
+      if (!groupedPlayersMap || groupedPlayersMap.size === 0) return;
 
-    const totalDraftedCount = myRosterPlayers.size + otherDraftedPlayers.size;
-    const currentPickNo = totalDraftedCount + 1;
-    const teams = draftMetaObj?.settings?.teams || 12;
-    const totalRounds = draftMetaObj?.settings?.rounds || 16;
+      const totalDraftedCount = myRosterPlayers.size + otherDraftedPlayers.size;
+      const currentPickNo = totalDraftedCount + 1;
+      const teams = draftMetaObj?.settings?.teams || 12;
+      const totalRounds = (currentPlatformMode === 'underdog') ? 18 : (draftMetaObj?.settings?.rounds || 16);
 
-    const effectiveDraftSlot = (currentPlatformMode === 'underdog')
-      ? (myUdDraftSlot || parseInt(localStorage.getItem('fp_ud_draft_slot') || localStorage.getItem('fp_relay_slot') || '0', 10) || null)
-      : myDraftSlot;
+      const effectiveDraftSlot = (currentPlatformMode === 'underdog')
+        ? (myUdDraftSlot || parseInt(localStorage.getItem('fp_ud_draft_slot') || localStorage.getItem('fp_relay_slot') || '0', 10) || null)
+        : myDraftSlot;
 
-    const turnsInfo = calculateDraftTurns(currentPickNo, teams, effectiveDraftSlot, totalRounds);
-    const rosterNeeds = evaluateRosterNeeds(myRosterPlayers, turnsInfo.currentRound);
+      const turnsInfo = calculateDraftTurns(currentPickNo, teams, effectiveDraftSlot, totalRounds);
+      const rosterNeeds = evaluateRosterNeeds(myRosterPlayers, turnsInfo.currentRound);
 
-    // Available Undrafted Players
-    const available = [];
-    groupedPlayersMap.forEach(p => {
-      if (!myRosterPlayers.has(p.canonical_key) && !otherDraftedPlayers.has(p.canonical_key)) {
-        available.push(p);
+      // Available Undrafted Players
+      const available = [];
+      groupedPlayersMap.forEach(p => {
+        if (!myRosterPlayers.has(p.canonical_key) && !otherDraftedPlayers.has(p.canonical_key)) {
+          available.push(p);
+        }
+      });
+
+      const heuristicAdvice = generateHeuristicStrategy(turnsInfo, rosterNeeds, available);
+      currentAiAdvice = heuristicAdvice;
+      renderAiAdvisorHudUI(turnsInfo, heuristicAdvice);
+
+      const hasKey = (aiProvider === 'groq' && groqApiKey) || (aiProvider === 'gemini' && geminiApiKey);
+      const turnKey = `${currentPickNo}_${effectiveDraftSlot}_${turnsInfo.isOnTheClock}_${aiProvider}_${Array.from(passedSuggestionsSet).join(',')}`;
+      const shouldAutoDeepReason = (isAiAutoTrigger && turnsInfo.isOnTheClock && turnKey !== lastEvaluatedTurnKey && hasKey);
+
+      if (forceDeepReason || shouldAutoDeepReason) {
+        lastEvaluatedTurnKey = turnKey;
+        let candidatePool = available.filter(p => !passedSuggestionsSet.has(p.canonical_key));
+        if (candidatePool.length === 0) candidatePool = available;
+
+        const scoredCandidates = candidatePool.map(p => ({
+          player: p,
+          ...evaluateCandidateScore(p, turnsInfo, rosterNeeds, aiStrategyMode)
+        })).sort((a, b) => b.score - a.score);
+
+        const aiAdvice = await queryAiStrategist(turnsInfo, rosterNeeds, scoredCandidates, heuristicAdvice);
+        currentAiAdvice = aiAdvice;
+        renderAiAdvisorHudUI(turnsInfo, aiAdvice);
       }
-    });
-
-    const heuristicAdvice = generateHeuristicStrategy(turnsInfo, rosterNeeds, available);
-    currentAiAdvice = heuristicAdvice;
-    renderAiAdvisorHudUI(turnsInfo, heuristicAdvice);
-
-    const hasKey = (aiProvider === 'groq' && groqApiKey) || (aiProvider === 'gemini' && geminiApiKey);
-    const turnKey = `${currentPickNo}_${myDraftSlot}_${turnsInfo.isOnTheClock}_${aiProvider}_${Array.from(passedSuggestionsSet).join(',')}`;
-    const shouldAutoDeepReason = (isAiAutoTrigger && turnsInfo.isOnTheClock && turnKey !== lastEvaluatedTurnKey && hasKey);
-
-    if (forceDeepReason || shouldAutoDeepReason) {
-      lastEvaluatedTurnKey = turnKey;
-      let candidatePool = available.filter(p => !passedSuggestionsSet.has(p.canonical_key));
-      if (candidatePool.length === 0) candidatePool = available;
-
-      const scoredCandidates = candidatePool.map(p => ({
-        player: p,
-        ...evaluateCandidateScore(p, turnsInfo, rosterNeeds, aiStrategyMode)
-      })).sort((a, b) => b.score - a.score);
-
-      const aiAdvice = await queryAiStrategist(turnsInfo, rosterNeeds, scoredCandidates, heuristicAdvice);
-      currentAiAdvice = aiAdvice;
-      renderAiAdvisorHudUI(turnsInfo, aiAdvice);
+    } catch (err) {
+      console.error('Error in updateAiDraftAdvisor:', err);
     }
   }
 
