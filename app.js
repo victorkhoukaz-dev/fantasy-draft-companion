@@ -2361,15 +2361,33 @@ document.addEventListener('DOMContentLoaded', () => {
   // Candidate Composite Scoring Engine
   function evaluateCandidateScore(player, turnsInfo, rosterNeeds, strategyMode) {
     const adp = player.sleeper_adp ? player.sleeper_adp : (player.pos_num ? player.pos_num * 7.5 : 150);
-    
-    // 1. Base Score anchored to Market ADP and Official Expert Overall Rank
     const expertRank = player.fp_overall_rank || adp;
+
+    // Target pick for this recommendation:
+    // If ON THE CLOCK, targetPick is currentPickNo.
+    // If WAITING / PLANNING (e.g. 12 picks away at Pick #43), targetPick is currentUserPick (43).
+    const targetPick = turnsInfo.isOnTheClock ? turnsInfo.currentPickNo : (turnsInfo.currentUserPick || turnsInfo.currentPickNo);
+    const survivalToMyTurn = calculateSurvivalProbability(adp, targetPick);
+
+    // 1. Availability Weight Calibration for Upcoming Turn
+    let availabilityWeight = 1.0;
+    if (!turnsInfo.isOnTheClock && turnsInfo.picksAway > 2) {
+      if (survivalToMyTurn < 0.12) {
+        availabilityWeight = 0.05; // Almost certain to be sniped before your turn
+      } else if (survivalToMyTurn < 0.25) {
+        availabilityWeight = 0.40; // High risk of being sniped
+      } else if (survivalToMyTurn >= 0.35 && survivalToMyTurn <= 0.85) {
+        availabilityWeight = 1.25; // Ideal target window for your upcoming pick!
+      }
+    }
+
+    // 2. Base Score anchored to Market ADP and Official Expert Overall Rank
     const effectiveMarketVal = (adp * 0.65) + (expertRank * 0.35);
     let score = Math.max(10, 165 - effectiveMarketVal);
+    score *= availabilityWeight;
 
-    // 2. Reach & Value Delta Calibration
-    const currentPick = turnsInfo.isOnTheClock ? turnsInfo.currentPickNo : (turnsInfo.currentUserPick || turnsInfo.currentPickNo);
-    const reachDelta = currentPick - adp; // negative if reaching
+    // 3. Reach & Value Delta Calibration
+    const reachDelta = targetPick - adp; // negative if reaching past target pick
 
     if (reachDelta < 0) {
       const absReach = Math.abs(reachDelta);
