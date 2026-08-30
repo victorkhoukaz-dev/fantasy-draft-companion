@@ -994,7 +994,7 @@
   {
     "player_name": "Puka Nacua",
     "position": "WR",
-    "team": "LA",
+    "team": "LAR",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -1174,7 +1174,7 @@
   {
     "player_name": "Derrick Henry",
     "position": "RB",
-    "team": "BLT",
+    "team": "BAL",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -1249,7 +1249,7 @@
   {
     "player_name": "Nico Collins",
     "position": "WR",
-    "team": "HST",
+    "team": "HOU",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -1369,7 +1369,7 @@
   {
     "player_name": "Kyren Williams",
     "position": "RB",
-    "team": "LA",
+    "team": "LAR",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -1399,7 +1399,7 @@
   {
     "player_name": "Jeremiyah Love",
     "position": "RB",
-    "team": "ARZ",
+    "team": "ARI",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -1414,7 +1414,7 @@
   {
     "player_name": "Zay Flowers",
     "position": "WR",
-    "team": "BLT",
+    "team": "BAL",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -1459,7 +1459,7 @@
   {
     "player_name": "Trey McBride",
     "position": "TE",
-    "team": "ARZ",
+    "team": "ARI",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -1534,7 +1534,7 @@
   {
     "player_name": "David Montgomery",
     "position": "RB",
-    "team": "HST",
+    "team": "HOU",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -1639,7 +1639,7 @@
   {
     "player_name": "Davante Adams",
     "position": "WR",
-    "team": "LA",
+    "team": "LAR",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -1699,7 +1699,7 @@
   {
     "player_name": "Quinshon Judkins",
     "position": "RB",
-    "team": "CLV",
+    "team": "CLE",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -1744,7 +1744,7 @@
   {
     "player_name": "Lamar Jackson",
     "position": "QB",
-    "team": "BLT",
+    "team": "BAL",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -1984,7 +1984,7 @@
   {
     "player_name": "Marvin Harrison Jr.",
     "position": "WR",
-    "team": "ARZ",
+    "team": "ARI",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -2239,7 +2239,7 @@
   {
     "player_name": "Blake Corum",
     "position": "RB",
-    "team": "LA",
+    "team": "LAR",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -2314,7 +2314,7 @@
   {
     "player_name": "Michael Wilson",
     "position": "WR",
-    "team": "ARZ",
+    "team": "ARI",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -2494,7 +2494,7 @@
   {
     "player_name": "Harold Fannin Jr.",
     "position": "TE",
-    "team": "CLV",
+    "team": "CLE",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -2539,7 +2539,7 @@
   {
     "player_name": "Matthew Stafford",
     "position": "QB",
-    "team": "LA",
+    "team": "LAR",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -2614,7 +2614,7 @@
   {
     "player_name": "KC Concepcion",
     "position": "WR",
-    "team": "CLV",
+    "team": "CLE",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -2809,7 +2809,7 @@
   {
     "player_name": "Mark Andrews",
     "position": "TE",
-    "team": "BLT",
+    "team": "BAL",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -3004,7 +3004,7 @@
   {
     "player_name": "C.J. Stroud",
     "position": "QB",
-    "team": "HST",
+    "team": "HOU",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -3049,7 +3049,7 @@
   {
     "player_name": "Denzel Boston",
     "position": "WR",
-    "team": "CLV",
+    "team": "CLE",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -3139,7 +3139,7 @@
   {
     "player_name": "Tyler Allgeier",
     "position": "RB",
-    "team": "ARZ",
+    "team": "ARI",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -3169,7 +3169,7 @@
   {
     "player_name": "Dalton Schultz",
     "position": "TE",
-    "team": "HST",
+    "team": "HOU",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -3214,7 +3214,7 @@
   {
     "player_name": "Woody Marks",
     "position": "RB",
-    "team": "HST",
+    "team": "HOU",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -3364,7 +3364,7 @@
   {
     "player_name": "Terrance Ferguson",
     "position": "TE",
-    "team": "LA",
+    "team": "LAR",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -3379,7 +3379,7 @@
   {
     "player_name": "Dylan Sampson",
     "position": "RB",
-    "team": "CLV",
+    "team": "CLE",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -3409,7 +3409,7 @@
   {
     "player_name": "Ja'Kobi Lane",
     "position": "WR",
-    "team": "BLT",
+    "team": "BAL",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -3514,7 +3514,7 @@
   {
     "player_name": "Tank Dell",
     "position": "WR",
-    "team": "HST",
+    "team": "HOU",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -3574,7 +3574,7 @@
   {
     "player_name": "Kayshon Boutte",
     "position": "WR",
-    "team": "HST",
+    "team": "HOU",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -3784,7 +3784,7 @@
   {
     "player_name": "Jaylin Noel",
     "position": "WR",
-    "team": "HST",
+    "team": "HOU",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -3874,7 +3874,7 @@
   {
     "player_name": "Jerry Jeudy",
     "position": "WR",
-    "team": "CLV",
+    "team": "CLE",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -3934,7 +3934,7 @@
   {
     "player_name": "Jacoby Brissett",
     "position": "QB",
-    "team": "ARZ",
+    "team": "ARI",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -4039,7 +4039,7 @@
   {
     "player_name": "Justice Hill",
     "position": "RB",
-    "team": "BLT",
+    "team": "BAL",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -4099,7 +4099,7 @@
   {
     "player_name": "Rashod Bateman",
     "position": "WR",
-    "team": "BLT",
+    "team": "BAL",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -4174,7 +4174,7 @@
   {
     "player_name": "Colby Parkinson",
     "position": "TE",
-    "team": "LA",
+    "team": "LAR",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -4249,7 +4249,7 @@
   {
     "player_name": "Deshaun Watson",
     "position": "QB",
-    "team": "CLV",
+    "team": "CLE",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -4414,7 +4414,7 @@
   {
     "player_name": "James Conner",
     "position": "RB",
-    "team": "ARZ",
+    "team": "ARI",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",

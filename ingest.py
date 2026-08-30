@@ -66,6 +66,18 @@ VALID_TEAMS = {
     "NYJ", "PHI", "PIT", "SF", "SEA", "TB", "TEN", "WAS",
     "FA", "NFL", "N/A", "TBD"
 }
+TEAM_ALIASES = {
+    "ARZ": "ARI", "BLT": "BAL", "CLV": "CLE", "HST": "HOU", "LA": "LAR",
+    "GBP": "GB", "KCC": "KC", "NEP": "NE", "NOS": "NO", "SFO": "SF",
+    "TBB": "TB", "WSH": "WAS", "WSHG": "WAS", "JAC": "JAX", "LVR": "LV"
+}
+
+def clean_team_code(team: str) -> str:
+    if not team:
+        return "NFL"
+    t = str(team).strip().upper()
+    return TEAM_ALIASES.get(t, t)
+
 CORRECTABLE_FIELDS = {"position", "team"}
 
 def load_manual_corrections():
@@ -347,27 +359,29 @@ def ingest_pdfs(force=False, target_file=None, mode="redraft"):
                 continue
         pending_files.append((pdf_path, filename, mtime, size))
 
-    if not pending_files:
-        logging.info(f"No matching PDF files to process for {mode_label}.")
-        print(f"\n[+] All targeted articles are up to date in {os.path.basename(db_path)}!\n")
-        return True
-
-    logging.info(f"[{mode_label}] Found {len(pending_files)} PDF file(s) to process.")
-
     all_takes = []
 
-    # If target_file or force is specified, purge old takes for pending files to prevent stale duplicates
-    pending_filenames = {fn for _, fn, _, _ in pending_files}
-
-    if os.path.exists(db_path):
-        try:
-            with open(db_path, "r", encoding="utf-8") as f:
-                existing_data = json.load(f)
-                if isinstance(existing_data, list):
-                    all_takes = [t for t in existing_data if t.get("source_file") not in pending_filenames]
-                    logging.info(f"Loaded {len(all_takes)} existing takes from {os.path.basename(db_path)} (purged old takes for updated files)")
-        except Exception as e:
-            logging.warning(f"Could not parse existing {os.path.basename(db_path)}: {e}")
+    if not pending_files:
+        logging.info(f"No new PDF files to process for {mode_label}. Checking CSV rankings...")
+        if os.path.exists(db_path):
+            try:
+                with open(db_path, "r", encoding="utf-8") as f:
+                    existing_data = json.load(f)
+                    if isinstance(existing_data, list):
+                        all_takes = [t for t in existing_data if not t.get("source_file", "").endswith(".csv")]
+            except Exception as e:
+                logging.warning(f"Could not parse existing {os.path.basename(db_path)}: {e}")
+    else:
+        logging.info(f"[{mode_label}] Found {len(pending_files)} PDF file(s) to process.")
+        pending_filenames = {fn for _, fn, _, _ in pending_files}
+        if os.path.exists(db_path):
+            try:
+                with open(db_path, "r", encoding="utf-8") as f:
+                    existing_data = json.load(f)
+                    if isinstance(existing_data, list):
+                        all_takes = [t for t in existing_data if t.get("source_file") not in pending_filenames and not t.get("source_file", "").endswith(".csv")]
+            except Exception as e:
+                logging.warning(f"Could not parse existing {os.path.basename(db_path)}: {e}")
 
     extraction_prompt = """
     You are an expert Fantasy Football research analyst examining pages of a FantasyPoints draft guide/article.
@@ -512,6 +526,17 @@ def ingest_pdfs(force=False, target_file=None, mode="redraft"):
         json.dump(unique_takes, f, indent=2, ensure_ascii=False)
 
     logging.info(f"Successfully saved {os.path.basename(db_path)} with {len(unique_takes)} total player takes.")
+    
+    # Auto-synchronize underdog_adp.json and extension dictionary when Underdog mode is ingested
+    if mode == "underdog":
+        try:
+            import subprocess
+            subprocess.run([sys.executable, os.path.join(BASE_DIR, "scripts", "ingest_underdog_adp.py")], check=True)
+            subprocess.run([sys.executable, os.path.join(BASE_DIR, "scripts", "build_content_js.py")], check=True)
+            logging.info("Auto-updated underdog_adp.json and underdog-extension/content.js from CSV!")
+        except Exception as e:
+            logging.warning(f"Post-ingest script hook warning: {e}")
+
     print(f"\n[+] Success! [{mode_label}] Ingestion complete. Database updated ({os.path.basename(db_path)}): {len(unique_takes)} total player takes.\n")
     return True
 
@@ -537,7 +562,7 @@ def parse_csv_rankings(raw_dir):
                     
                     name = clean_row.get("name") or clean_row.get("player") or clean_row.get("player_name") or ""
                     pos = clean_row.get("pos") or clean_row.get("position") or ""
-                    team = clean_row.get("team") or "NFL"
+                    team = clean_team_code(clean_row.get("team") or "NFL")
                     
                     rank = clean_row.get("overall") or clean_row.get("rank") or clean_row.get("adp") or ""
                     tier = clean_row.get("tier") or ""
