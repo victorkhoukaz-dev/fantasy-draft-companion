@@ -25,19 +25,33 @@
     syncStatusEl.title = 'Click to set your draft slot or inspect sync';
     
     syncStatusEl.addEventListener('click', () => {
-      const current = userSelectedSlot || 'Auto';
-      const promptVal = prompt('🏈 FantasyPoints Underdog Relay\n\nEnter your Draft Slot (1-12) to guarantee your picks sync to "My Roster":\n(Current: ' + current + ')', userSelectedSlot || '');
+      const currentSlot = userSelectedSlot || 'Not set';
+      const promptVal = prompt(
+        '🏈 FantasyPoints Underdog Live Relay\n\n' +
+        'Enter your Draft Slot number (1-12) to lock your picks to "My Roster":\n' +
+        '(Example: Enter 2 if you picked #2 overall in Round 1)\n\n' +
+        'Current Draft Slot: ' + currentSlot,
+        userSelectedSlot || ''
+      );
       if (promptVal !== null) {
-        const slotNum = parseInt(promptVal, 10);
+        const slotNum = parseInt(promptVal.trim(), 10);
         if (slotNum >= 1 && slotNum <= 12) {
           userSelectedSlot = slotNum;
           localStorage.setItem('fp_relay_slot', String(slotNum));
-          alert('Draft Slot set to: Slot ' + slotNum + '. All picks in Column ' + slotNum + ' will sync to My Roster!');
         } else {
           userSelectedSlot = null;
           localStorage.removeItem('fp_relay_slot');
-          alert('Draft Slot set to Auto-Detect.');
         }
+        
+        const picks = parseDraftPicks();
+        const myPicks = picks.filter(p => p.is_user);
+        const myNames = myPicks.map(p => p.player_name).join(', ') || 'None detected yet';
+        alert(
+          '✅ Draft Slot set to Slot ' + (userSelectedSlot || 'Auto') + '\n\n' +
+          'Found ' + picks.length + ' total drafted players in room.\n' +
+          'My Roster (' + myPicks.length + ' players): ' + myNames
+        );
+        lastPicksCount = -1;
         tick();
       }
     });
@@ -56,7 +70,6 @@
 
   function getLoggedInUsername() {
     try {
-      // 1. Look for account avatar / header button
       const userNav = document.querySelector('[data-testid*="user"], [class*="UserMenu"], [class*="user-menu"], [class*="Header_username"], [class*="ProfileButton"], [aria-label*="Account"], [aria-label*="Profile"]');
       if (userNav) {
         const text = (userNav.innerText || userNav.getAttribute('aria-label') || '').trim();
@@ -64,7 +77,6 @@
           return text.replace(/Account/i, '').replace(/Profile/i, '').trim().toLowerCase();
         }
       }
-      // 2. Scan localStorage for auth / session username
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
         if (k && (k.includes('user') || k.includes('auth') || k.includes('session') || k.includes('profile'))) {
@@ -107,41 +119,53 @@
     return false;
   }
 
-  function getColumnIndex(el) {
-    let cur = el;
-    while (cur && cur !== document.body) {
-      if (cur.parentElement) {
-        const siblings = Array.from(cur.parentElement.children);
-        if (siblings.length >= 10 && siblings.length <= 14) {
-          const idx = siblings.indexOf(cur);
-          if (idx >= 0 && idx < 12) {
-            return idx + 1; // 1-indexed (1 to 12)
-          }
-        }
+  function findDraftBoardContainer() {
+    const candidates = document.querySelectorAll(
+      '[class*="board"], [class*="Board"], [class*="grid"], [class*="Grid"], [data-testid*="board"], [data-testid*="draft-board"], main, [role="main"]'
+    );
+    for (let i = 0; i < candidates.length; i++) {
+      const el = candidates[i];
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 400 && rect.height > 150) {
+        return el;
       }
-      cur = cur.parentElement;
     }
+    return document.body;
+  }
+
+  function getGeometricSlot(el, boardContainer) {
+    try {
+      if (!el || !boardContainer) return null;
+      const bRect = boardContainer.getBoundingClientRect();
+      const eRect = el.getBoundingClientRect();
+      if (bRect.width < 100 || eRect.width < 5) return null;
+
+      const centerX = eRect.left + (eRect.width / 2);
+      const relX = (centerX - bRect.left) / bRect.width;
+      if (relX >= 0 && relX <= 1.0) {
+        return Math.min(12, Math.max(1, Math.floor(relX * 12) + 1));
+      }
+    } catch(e) {}
     return null;
   }
 
   function isInsideUserContainer(el, username, colSlot) {
     if (!el || isInsideAvailableQueue(el)) return false;
 
-    if (userSelectedSlot && colSlot === userSelectedSlot) {
+    if (userSelectedSlot && colSlot && colSlot === userSelectedSlot) {
       return true;
     }
 
     let cur = el;
     let depth = 0;
     while (cur && cur !== document.body && depth < 10) {
-      const text = (cur.innerText || cur.textContent || '');
+      const text = (cur.innerText || cur.textContent || '').toLowerCase();
       const cls = (typeof cur.className === 'string' ? cur.className : '').toLowerCase();
       const testId = (cur.getAttribute && cur.getAttribute('data-testid') || '').toLowerCase();
       const aria = (cur.getAttribute && cur.getAttribute('aria-label') || '').toLowerCase();
 
-      // Check explicit user indicators on the column or parent container
       if (
-        text.includes('(You)') || text.includes('(YOU)') || text.includes('My Team') ||
+        text.includes('(you)') || text.includes('my team') ||
         cls.includes('my-team') || cls.includes('user-pick') || cls.includes('is-user') ||
         testId.includes('my-team') || testId.includes('user-pick') || aria.includes('my team')
       ) {
@@ -149,7 +173,7 @@
       }
 
       if (username && username.length > 2) {
-        if (text.toLowerCase().includes(username) || cls.includes(username)) {
+        if (text.includes(username) || cls.includes(username)) {
           return true;
         }
       }
@@ -194,6 +218,7 @@
       const picks = [];
       const seenKeys = new Set();
       const username = getLoggedInUsername();
+      const boardContainer = findDraftBoardContainer();
 
       // Scan all potential pick cells, columns, and board tiles
       const candidateElements = document.querySelectorAll(
@@ -216,7 +241,7 @@
           if (!seenKeys.has(key)) {
             seenKeys.add(key);
 
-            const colSlot = getColumnIndex(el);
+            const colSlot = getGeometricSlot(el, boardContainer);
             const isUser = isInsideUserContainer(el, username, colSlot);
 
             picks.push({
