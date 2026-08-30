@@ -401,11 +401,29 @@ select option {
   border-radius: var(--radius-lg);
   padding: 14px;
   backdrop-filter: blur(16px);
-  height: fit-content;
   position: sticky;
   top: 135px;
+  max-height: calc(100vh - 150px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   transition: all 0.25s ease;
   box-shadow: var(--shadow-main);
+}
+
+.roster-sidebar::-webkit-scrollbar {
+  width: 5px;
+}
+.roster-sidebar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+.roster-sidebar::-webkit-scrollbar-thumb {
+  background: rgba(56, 189, 248, 0.35);
+  border-radius: 4px;
+}
+.roster-sidebar::-webkit-scrollbar-thumb:hover {
+  background: rgba(56, 189, 248, 0.6);
 }
 
 .roster-sidebar.collapsed {

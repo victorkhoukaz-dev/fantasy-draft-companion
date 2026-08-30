@@ -1116,9 +1116,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let adpSub = '';
 
     if (player.sleeper_adp && player.sleeper_adp < 300) {
-      const overallAdp = player.sleeper_adp;
-      const round = Math.ceil(overallAdp / 12);
-      const pickInRound = Math.floor(((overallAdp - 1) % 12) + 1);
+      const rawNum = player.exact_adp || player.sleeper_adp;
+      const overallAdp = player.exact_adp ? player.exact_adp.toFixed(1) : player.sleeper_adp;
+      const round = Math.ceil(rawNum / 12);
+      const pickInRound = Math.floor(((rawNum - 1) % 12) + 1);
 
       if (isSinglePosView && player.pos_num) {
         // Show pure positional ADP number in position view (e.g. "1")

@@ -11,12 +11,13 @@ for p in players_dict.values():
     full_name = p['full_name']
     
     clean_name = full_name.replace("'", "").replace("’", "").replace(".", "").strip()
-    no_suffix = full_name.replace(" Jr.", "").replace(" Jr", "").replace(" III", "").replace(" II", "").strip()
+    no_suffix = full_name.replace(" Jr.", "").replace(" Jr", "").replace(" III", "").replace(" II", "").replace(" Sr.", "").replace(" Sr", "").strip()
     
     parts = full_name.split()
     short_name = f"{parts[0][0]}. {' '.join(parts[1:])}" if len(parts) > 1 else full_name
+    short_no_suffix = f"{parts[0][0]}. {' '.join(no_suffix.split()[1:])}" if len(no_suffix.split()) > 1 else short_name
 
-    aliases = list(set([full_name, clean_name, no_suffix, short_name]))
+    aliases = list(set([full_name, clean_name, no_suffix, short_name, short_no_suffix]))
 
     player_list.append({
         'name': full_name,
@@ -50,7 +51,7 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     syncStatusEl.id = 'fp-ud-sync-badge';
     syncStatusEl.style.cssText = 'position: fixed; bottom: 16px; right: 16px; z-index: 9999999; background: #0f172a; border: 1px solid #10b981; color: #6ee7b7; padding: 7px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,0.6); display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; transition: all 0.2s ease;';
     syncStatusEl.innerHTML = '<span>🟢</span><span>FantasyPoints: Active</span>';
-    syncStatusEl.title = 'Click to inspect detected picks and username';
+    syncStatusEl.title = 'Click to inspect detected picks';
     
     syncStatusEl.addEventListener('click', () => {{
       const picks = parseDraftPicks();
@@ -74,7 +75,6 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
 
   function getLoggedInUsername() {{
     try {{
-      // 1. Look for account avatar / header button
       const userNav = document.querySelector('[data-testid*="user"], [class*="UserMenu"], [class*="user-menu"], [class*="Header_username"], [class*="ProfileButton"], [aria-label*="Account"], [aria-label*="Profile"]');
       if (userNav) {{
         const text = (userNav.innerText || userNav.getAttribute('aria-label') || '').trim();
@@ -82,7 +82,6 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
           return text.replace(/Account/i, '').replace(/Profile/i, '').trim().toLowerCase();
         }}
       }}
-      // 2. Scan localStorage for auth / session username
       for (let i = 0; i < localStorage.length; i++) {{
         const k = localStorage.key(i);
         if (k && (k.includes('user') || k.includes('auth') || k.includes('session') || k.includes('profile'))) {{
@@ -106,10 +105,9 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
       const testId = (cur.getAttribute && cur.getAttribute('data-testid') || '').toLowerCase();
       
       if (
-        cls.includes('queue') || cls.includes('available') || cls.includes('rankings') || 
-        cls.includes('playerlist') || cls.includes('player-list') || cls.includes('search') ||
-        id.includes('queue') || id.includes('available') || id.includes('player-list') ||
-        testId.includes('player-list') || testId.includes('queue')
+        cls.includes('playerlist') || cls.includes('player-list') || cls.includes('available-player') ||
+        testId.includes('player-list') || testId.includes('available-players') || testId.includes('draft-queue') ||
+        id.includes('player-list') || id.includes('draft-queue')
       ) {{
         return true;
       }}
@@ -129,13 +127,11 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
       const aria = (cur.getAttribute && cur.getAttribute('aria-label') || '').toLowerCase();
 
       if (
-        text.includes('(You)') || text.includes('(YOU)') || text.includes('YOU') || 
-        text.includes('My Team') || text.includes('Your Pick') ||
+        text.includes('(You)') || text.includes('(YOU)') ||
         cls.includes('user-pick') || cls.includes('mypick') || cls.includes('is-user') ||
-        cls.includes('isuser') || cls.includes('my-team') || cls.includes('owner') ||
-        cls.includes('highlight') || cls.includes('selected') ||
-        testId.includes('my-pick') || testId.includes('user-pick') || aria.includes('my team') ||
-        aria.includes('your pick') || aria.includes('you')
+        cls.includes('isuser') || cls.includes('my-team') ||
+        testId.includes('my-pick') || testId.includes('user-pick') ||
+        aria.includes('my team')
       ) {{
         return true;
       }}
@@ -145,17 +141,6 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
           return true;
         }}
       }}
-
-      // Check for user-highlighted border color
-      try {{
-        const style = window.getComputedStyle ? window.getComputedStyle(cur) : null;
-        if (style) {{
-          const border = style.borderColor || '';
-          if (border.includes('234, 179, 8') || border.includes('250, 204, 21') || border.includes('16, 185, 129') || border.includes('rgb(255, 230,') || border.includes('rgb(254, 240,')) {{
-            return true;
-          }}
-        }}
-      }} catch(e) {{}}
 
       cur = cur.parentElement;
       depth++;
@@ -169,19 +154,15 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
       const seenKeys = new Set();
       const username = getLoggedInUsername();
       
-      // Target elements strictly inside the draft board / completed pick cells
-      const boardCells = document.querySelectorAll(
-        '[class*="board"] [class*="cell"], [class*="Board"] [class*="Cell"], [class*="draft-board"] div, [class*="DraftBoard"] div, [class*="pickCard"], [class*="DraftPick"], [class*="PickTile"], [data-testid*="draft-cell"], [data-testid*="pick"]'
-      );
+      // Target board cells, completed pick rows, and pick cards across the entire room
+      const allElements = document.querySelectorAll('*');
 
-      const targetElements = (boardCells.length > 0) ? boardCells : document.querySelectorAll('[class*="cell"], [class*="Cell"], [class*="card"], [class*="Card"], [class*="tile"], [class*="Tile"], div');
-
-      targetElements.forEach(el => {{
+      allElements.forEach(el => {{
         if (isInsideAvailableQueue(el)) return;
-        if (el.children.length > 6) return;
+        if (el.children.length > 8) return;
 
         const text = (el.innerText || el.textContent || '').trim();
-        if (!text || text.length < 3 || text.length > 140) return;
+        if (!text || text.length < 3 || text.length > 200) return;
 
         const normText = normalize(text);
 
@@ -227,20 +208,17 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
       timestamp: Date.now()
     }};
 
-    // 1. Extension Background Router
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {{
       try {{
         chrome.runtime.sendMessage(payload);
       }} catch(e) {{}}
     }}
 
-    // 2. BroadcastChannel
     try {{
       const channel = new BroadcastChannel('underdog-sync');
       channel.postMessage(payload);
     }} catch(e) {{}}
 
-    // 3. Window postMessage
     window.postMessage(payload, '*');
   }}
 
@@ -274,11 +252,9 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     }}
   }}
 
-  // Fast 800ms interval for live 20-second fast draft responsiveness
   setInterval(tick, 800);
   setTimeout(tick, 500);
 
-  // Listen for sync ping from companion
   if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {{
     chrome.runtime.onMessage.addListener((msg) => {{
       if (msg && msg.type === 'REQUEST_UNDERDOG_SYNC') {{
@@ -294,4 +270,4 @@ out_path = os.path.join(os.getcwd(), 'underdog-extension', 'content.js')
 with open(out_path, 'w', encoding='utf-8') as f:
     f.write(content_js_template)
 
-print(f"Generated enhanced user-detecting {out_path} successfully!")
+print(f"Generated clean full-board {out_path} successfully!")
