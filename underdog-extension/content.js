@@ -29,7 +29,7 @@
       const promptVal = prompt(
         '🏈 FantasyPoints Underdog Live Relay\n\n' +
         'Enter your Draft Slot number (1-12) to lock your picks to "My Roster":\n' +
-        '(Example: Enter 2 if you picked #2 overall in Round 1)\n\n' +
+        '(Example: Enter 4 if you have pick 1.04)\n\n' +
         'Current Draft Slot: ' + currentSlot,
         userSelectedSlot || ''
       );
@@ -119,36 +119,6 @@
     return false;
   }
 
-  function findDraftBoardContainer() {
-    const candidates = document.querySelectorAll(
-      '[class*="board"], [class*="Board"], [class*="grid"], [class*="Grid"], [data-testid*="board"], [data-testid*="draft-board"], main, [role="main"]'
-    );
-    for (let i = 0; i < candidates.length; i++) {
-      const el = candidates[i];
-      const rect = el.getBoundingClientRect();
-      if (rect.width > 400 && rect.height > 150) {
-        return el;
-      }
-    }
-    return document.body;
-  }
-
-  function getGeometricSlot(el, boardContainer) {
-    try {
-      if (!el || !boardContainer) return null;
-      const bRect = boardContainer.getBoundingClientRect();
-      const eRect = el.getBoundingClientRect();
-      if (bRect.width < 100 || eRect.width < 5) return null;
-
-      const centerX = eRect.left + (eRect.width / 2);
-      const relX = (centerX - bRect.left) / bRect.width;
-      if (relX >= 0 && relX <= 1.0) {
-        return Math.min(12, Math.max(1, Math.floor(relX * 12) + 1));
-      }
-    } catch(e) {}
-    return null;
-  }
-
   function isInsideUserContainer(el, username, colSlot) {
     if (!el || isInsideAvailableQueue(el)) return false;
 
@@ -215,10 +185,9 @@
 
   function parseDraftPicks() {
     try {
-      const picks = [];
+      const rawFoundPicks = [];
       const seenKeys = new Set();
       const username = getLoggedInUsername();
-      const boardContainer = findDraftBoardContainer();
 
       // Scan all potential pick cells, columns, and board tiles
       const candidateElements = document.querySelectorAll(
@@ -241,18 +210,57 @@
           if (!seenKeys.has(key)) {
             seenKeys.add(key);
 
-            const colSlot = getGeometricSlot(el, boardContainer);
-            const isUser = isInsideUserContainer(el, username, colSlot);
+            let posX = 0;
+            try {
+              const r = el.getBoundingClientRect();
+              posX = r.left + (r.width / 2);
+            } catch(e) {}
 
-            picks.push({
+            rawFoundPicks.push({
               player_name: matchedPlayer.name,
               position: matchedPlayer.pos,
               team: matchedPlayer.team,
-              slot: colSlot,
-              is_user: Boolean(isUser)
+              posX: posX,
+              el: el
             });
           }
         }
+      });
+
+      // Cluster all detected picks by horizontal X coordinate into 12 column clusters
+      const clusters = [];
+      rawFoundPicks.forEach(p => {
+        if (p.posX > 0) {
+          let matchedCluster = clusters.find(c => Math.abs(c.x - p.posX) < 40);
+          if (!matchedCluster) {
+            matchedCluster = { x: p.posX, picks: [] };
+            clusters.push(matchedCluster);
+          }
+          matchedCluster.picks.push(p);
+        }
+      });
+
+      // Sort clusters left-to-right (Slot 1 to 12)
+      clusters.sort((a, b) => a.x - b.x);
+
+      // Assign slots to clusters
+      clusters.forEach((cluster, idx) => {
+        const slotNum = idx + 1;
+        cluster.picks.forEach(p => {
+          p.slot = slotNum;
+        });
+      });
+
+      // Build final picks list
+      const picks = rawFoundPicks.map(p => {
+        const isUser = (userSelectedSlot && p.slot && p.slot === userSelectedSlot) || isInsideUserContainer(p.el, username, p.slot);
+        return {
+          player_name: p.player_name,
+          position: p.position,
+          team: p.team,
+          slot: p.slot || null,
+          is_user: Boolean(isUser)
+        };
       });
 
       return picks;
