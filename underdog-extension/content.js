@@ -1,5 +1,5 @@
 // FantasyPoints Underdog Live Draft Relay
-// Ultra-lightweight, zero-lag live pick scanner for Underdog Fantasy draft rooms
+// Ultra-lightweight, high-accuracy live pick scanner for Underdog Fantasy draft rooms
 
 (function() {
   'use strict';
@@ -30,8 +30,9 @@
       const myNames = myPicks.map(p => p.player_name).join(', ') || 'None detected yet';
       alert(
         '🏈 FantasyPoints Underdog Live Relay\n\n' +
-        'Total Completed Picks: ' + picks.length + '\n' +
-        'My Roster (' + myPicks.length + ' players): ' + myNames
+        'Total Picks Found: ' + picks.length + '\n' +
+        'My Roster (' + myPicks.length + ' players): ' + myNames + '\n\n' +
+        'Opponent Picks: ' + (picks.length - myPicks.length) + ' players taken'
       );
     });
 
@@ -45,6 +46,39 @@
 
   function normalize(str) {
     return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  function isInsideAvailableQueue(el) {
+    let cur = el;
+    while (cur && cur !== document.body) {
+      const cls = (typeof cur.className === 'string' ? cur.className : '').toLowerCase();
+      const id = (cur.id || '').toLowerCase();
+      const testId = (cur.getAttribute && cur.getAttribute('data-testid') || '').toLowerCase();
+      const aria = (cur.getAttribute && cur.getAttribute('aria-label') || '').toLowerCase();
+      
+      // Do NOT filter out roster panel even if it has some generic classes
+      let rect = null;
+      try { rect = cur.getBoundingClientRect(); } catch(e) {}
+      const winWidth = window.innerWidth || 1920;
+      if (rect && rect.left > (winWidth * 0.55)) {
+        return false;
+      }
+
+      if (
+        cls.includes('playerlist') || cls.includes('player-list') || 
+        cls.includes('available') || cls.includes('rankings') || cls.includes('ranking') ||
+        cls.includes('search') || cls.includes('queue') ||
+        id.includes('player-list') || id.includes('playerlist') ||
+        id.includes('available') || id.includes('search') || id.includes('queue') ||
+        testId.includes('player-list') || testId.includes('playerlist') ||
+        testId.includes('available') || testId.includes('search') || testId.includes('queue') ||
+        aria.includes('available') || aria.includes('search') || aria.includes('queue')
+      ) {
+        return true;
+      }
+      cur = cur.parentElement;
+    }
+    return false;
   }
 
   function matchPlayerInText(normText, rawUpperText) {
@@ -84,10 +118,10 @@
 
       const winWidth = window.innerWidth || document.documentElement.clientWidth || 1920;
 
-      // Fast selection of leaf-like text elements across the page
-      const candidateElements = document.querySelectorAll('p, span, div, li, tr, h1, h2, h3, h4, h5, h6, a');
+      // 1. Scan Right Roster Panel for User Picks (100% User Roster)
+      const allTextNodes = document.querySelectorAll('p, span, div, li, tr, h1, h2, h3, h4, h5, h6, a');
 
-      candidateElements.forEach(el => {
+      allTextNodes.forEach(el => {
         if (el.children.length > 3) return;
 
         const text = (el.textContent || '').trim();
@@ -95,28 +129,15 @@
 
         const normText = normalize(text);
         const rawUpper = text.toUpperCase();
-
         const matched = matchPlayerInText(normText, rawUpper);
+
         if (matched) {
           const key = normalize(matched.name);
-          
           let rect = null;
-          try {
-            rect = el.getBoundingClientRect();
-          } catch(e) {}
+          try { rect = el.getBoundingClientRect(); } catch(e) {}
 
-          if (!rect || rect.width === 0 || rect.height === 0) return;
-
-          // 1. Right Roster Panel: X > 60% and Y > 80px (My Roster)
-          const isRightRoster = (rect.left > (winWidth * 0.58)) && (rect.top > 80);
-
-          // 2. Top Ticker: Y < 120px (Other completed picks)
-          const isTopTicker = (rect.top < 120);
-
-          // 3. Board View (if user switched to the 12-column board layout)
-          const isBoard = (rect.top > 120 && rect.left >= (winWidth * 0.20) && rect.left <= (winWidth * 0.85));
-
-          if (isRightRoster) {
+          // If located in right third of screen (Roster sidebar)
+          if (rect && rect.left > (winWidth * 0.55) && rect.top > 80) {
             if (!myRosterKeys.has(key)) {
               myRosterKeys.add(key);
               seenKeys.add(key);
@@ -127,20 +148,36 @@
                 is_user: true
               });
             }
-          } else if (isTopTicker || isBoard) {
-            // Skip the left available player list (X < 45% and Y > 100)
-            const isAvailableList = (rect.left < (winWidth * 0.45)) && (rect.top > 100);
-            if (!isAvailableList) {
-              if (!seenKeys.has(key)) {
-                seenKeys.add(key);
-                picks.push({
-                  player_name: matched.name,
-                  position: matched.pos,
-                  team: matched.team,
-                  is_user: myRosterKeys.has(key)
-                });
-              }
-            }
+          }
+        }
+      });
+
+      // 2. Scan Top Ticker, Header Carousel, Board Grid, and Completed Picks
+      const candidateElements = document.querySelectorAll(
+        'header div, nav div, [class*="ticker"] div, [class*="Ticker"] div, [class*="carousel"] div, [class*="Carousel"] div, [class*="board"] div, [class*="Board"] div, [class*="grid"] div, [class*="Grid"] div, [class*="column"] div, [class*="Column"] div, [class*="card"], [class*="Card"], [class*="tile"], [class*="Tile"], [class*="pick"], [class*="Pick"], [data-testid*="pick"], [data-testid*="cell"]'
+      );
+
+      candidateElements.forEach(el => {
+        if (isInsideAvailableQueue(el)) return;
+        if (el.children.length > 5) return;
+
+        const text = (el.textContent || '').trim();
+        if (!text || text.length < 3 || text.length > 90) return;
+
+        const normText = normalize(text);
+        const rawUpper = text.toUpperCase();
+        const matched = matchPlayerInText(normText, rawUpper);
+
+        if (matched) {
+          const key = normalize(matched.name);
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            picks.push({
+              player_name: matched.name,
+              position: matched.pos,
+              team: matched.team,
+              is_user: myRosterKeys.has(key)
+            });
           }
         }
       });
