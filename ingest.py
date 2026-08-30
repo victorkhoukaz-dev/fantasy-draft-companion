@@ -624,45 +624,52 @@ def is_skipped_file(filename):
     fn = filename.lower()
     return "overvalues" in fn or ("targets" in fn and "ft staff" in fn) or "fp staff" in fn
 
-def watch_folder(mode="redraft"):
-    cfg = get_mode_config(mode)
-    raw_dir = cfg["raw_dir"]
-    manifest_path = cfg["manifest_path"]
-    mode_label = cfg["label"]
-
-    print(f"\n[Auto-Watcher Active: {mode_label}] Monitoring '{raw_dir}' for new PDFs...")
-    print(f"Simply drop any FantasyPoints PDF into {raw_dir}/. New files auto-ingest instantly!\n")
+def watch_folder(mode="all"):
+    print("\n[Auto-Watcher Active] 🔍 Monitoring 'raw_articles/redraft/' AND 'raw_articles/underdog/' for new PDFs/CSVs...")
+    print("Simply drop any FantasyPoints PDF or CSV into its folder. New files auto-ingest instantly!\n")
     
+    modes_to_watch = ["redraft", "underdog"] if mode in ["all", "both"] else [mode]
+
     while True:
         try:
-            pdf_paths_set = set()
-            if cfg["mode"] == "redraft":
-                for p in glob.glob(os.path.join(BASE_DIR, "raw_articles", "redraft", "*.pdf")):
-                    pdf_paths_set.add(p)
-                for p in glob.glob(os.path.join(BASE_DIR, "raw_articles", "*.pdf")):
-                    pdf_paths_set.add(p)
-            else:
-                for p in glob.glob(os.path.join(raw_dir, "*.pdf")):
-                    pdf_paths_set.add(p)
+            for m in modes_to_watch:
+                cfg = get_mode_config(m)
+                raw_dir = cfg["raw_dir"]
+                manifest_path = cfg["manifest_path"]
+                mode_label = cfg["label"]
 
-            pdf_files = sorted(list(pdf_paths_set))
-            manifest = load_manifest(manifest_path)
-            has_new = False
+                file_paths_set = set()
+                if m == "redraft":
+                    for p in glob.glob(os.path.join(BASE_DIR, "raw_articles", "redraft", "*.pdf")):
+                        file_paths_set.add(p)
+                    for p in glob.glob(os.path.join(BASE_DIR, "raw_articles", "redraft", "*.csv")):
+                        file_paths_set.add(p)
+                    for p in glob.glob(os.path.join(BASE_DIR, "raw_articles", "*.pdf")):
+                        file_paths_set.add(p)
+                else:
+                    for p in glob.glob(os.path.join(raw_dir, "*.pdf")):
+                        file_paths_set.add(p)
+                    for p in glob.glob(os.path.join(raw_dir, "*.csv")):
+                        file_paths_set.add(p)
 
-            for pdf_path in pdf_files:
-                filename = os.path.basename(pdf_path)
-                if is_skipped_file(filename):
-                    continue
-                mtime = os.path.getmtime(pdf_path)
-                size = os.path.getsize(pdf_path)
+                watch_files = sorted(list(file_paths_set))
+                manifest = load_manifest(manifest_path)
+                has_new = False
 
-                if filename not in manifest or manifest[filename].get("mtime") != mtime or manifest[filename].get("size") != size:
-                    has_new = True
-                    break
+                for f_path in watch_files:
+                    filename = os.path.basename(f_path)
+                    if is_skipped_file(filename):
+                        continue
+                    mtime = os.path.getmtime(f_path)
+                    size = os.path.getsize(f_path)
 
-            if has_new:
-                logging.info(f"[{mode_label}] Detected new or updated PDF file(s). Triggering auto-ingestion...")
-                ingest_pdfs(mode=mode)
+                    if filename not in manifest or manifest[filename].get("mtime") != mtime or manifest[filename].get("size") != size:
+                        has_new = True
+                        break
+
+                if has_new:
+                    logging.info(f"[{mode_label}] Detected new or updated file(s). Triggering auto-ingestion...")
+                    ingest_pdfs(mode=m)
 
         except KeyboardInterrupt:
             print("\n[!] Watcher stopped by user.")
@@ -685,7 +692,8 @@ if __name__ == "__main__":
     target_mode = "underdog" if args.mode in ["underdog", "bestball", "bb"] else "redraft"
 
     if args.watch:
-        watch_folder(mode=target_mode)
+        watch_mode = "all" if args.mode == "redraft" else target_mode
+        watch_folder(mode=watch_mode)
     elif args.validate:
         validate_existing_database(mode=target_mode)
     elif args.force:
