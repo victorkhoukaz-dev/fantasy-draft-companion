@@ -79,9 +79,8 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
       const myNames = myPicks.map(p => p.player_name).join(', ') || 'None detected yet';
       alert(
         '🏈 FantasyPoints Underdog Live Relay\\n\\n' +
-        'Total Picks Found: ' + picks.length + '\\n' +
-        'My Roster (' + myPicks.length + ' players): ' + myNames + '\\n\\n' +
-        '(Picks sync automatically from your Roster panel on the right)'
+        'Total Completed Picks: ' + picks.length + '\\n' +
+        'My Roster (' + myPicks.length + ' players): ' + myNames
       );
     }});
 
@@ -95,29 +94,6 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
 
   function normalize(str) {{
     return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  }}
-
-  // Fast, instant leaf text node search to find the user's right roster panel
-  function findUserRosterPanel() {{
-    if (!document.body) return null;
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-    let node;
-    while ((node = walker.nextNode())) {{
-      const val = node.nodeValue || '';
-      if (val.includes('Pick position') || val.includes('pick position')) {{
-        let cur = node.parentElement;
-        let depth = 0;
-        while (cur && cur !== document.body && depth < 7) {{
-          const r = cur.getBoundingClientRect();
-          if (r.width > 120 && r.width < 500 && r.height > 150) {{
-            return cur;
-          }}
-          cur = cur.parentElement;
-          depth++;
-        }}
-      }}
-    }}
-    return null;
   }}
 
   function matchPlayerInText(normText, rawUpperText) {{
@@ -155,21 +131,41 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
       const seenKeys = new Set();
       const myRosterKeys = new Set();
 
-      // Step 1: Scan ONLY the dedicated User Roster Panel on the right (100% Guaranteed User Picks)
-      const rosterPanel = findUserRosterPanel();
-      if (rosterPanel) {{
-        const textNodes = rosterPanel.querySelectorAll('div, li, p, span');
-        textNodes.forEach(el => {{
-          if (el.children.length > 4) return;
-          const text = (el.textContent || '').trim();
-          if (!text || text.length < 3 || text.length > 100) return;
+      const winWidth = window.innerWidth || document.documentElement.clientWidth || 1920;
 
-          const normText = normalize(text);
-          const rawUpper = text.toUpperCase();
+      // Fast selection of leaf-like text elements across the page
+      const candidateElements = document.querySelectorAll('p, span, div, li, tr, h1, h2, h3, h4, h5, h6, a');
 
-          const matched = matchPlayerInText(normText, rawUpper);
-          if (matched) {{
-            const key = normalize(matched.name);
+      candidateElements.forEach(el => {{
+        if (el.children.length > 3) return;
+
+        const text = (el.textContent || '').trim();
+        if (!text || text.length < 3 || text.length > 70) return;
+
+        const normText = normalize(text);
+        const rawUpper = text.toUpperCase();
+
+        const matched = matchPlayerInText(normText, rawUpper);
+        if (matched) {{
+          const key = normalize(matched.name);
+          
+          let rect = null;
+          try {{
+            rect = el.getBoundingClientRect();
+          }} catch(e) {{}}
+
+          if (!rect || rect.width === 0 || rect.height === 0) return;
+
+          // 1. Right Roster Panel: X > 60% and Y > 80px (My Roster)
+          const isRightRoster = (rect.left > (winWidth * 0.58)) && (rect.top > 80);
+
+          // 2. Top Ticker: Y < 120px (Other completed picks)
+          const isTopTicker = (rect.top < 120);
+
+          // 3. Board View (if user switched to the 12-column board layout)
+          const isBoard = (rect.top > 120 && rect.left >= (winWidth * 0.20) && rect.left <= (winWidth * 0.85));
+
+          if (isRightRoster) {{
             if (!myRosterKeys.has(key)) {{
               myRosterKeys.add(key);
               seenKeys.add(key);
@@ -180,34 +176,20 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
                 is_user: true
               }});
             }}
-          }}
-        }});
-      }}
-
-      // Step 2: Scan Top Completed Ticker and Board Pick Cells (Other Drafted Players)
-      const tickerElements = document.querySelectorAll(
-        '[class*="ticker"] div, [class*="Ticker"] div, [class*="carousel"] div, [class*="Carousel"] div, [class*="board"] div, [class*="Board"] div, [class*="pickCard"], [class*="DraftPick"], [data-testid*="pick"]'
-      );
-
-      tickerElements.forEach(el => {{
-        if (el.children.length > 6) return;
-        const text = (el.textContent || '').trim();
-        if (!text || text.length < 3 || text.length > 120) return;
-
-        const normText = normalize(text);
-        const rawUpper = text.toUpperCase();
-
-        const matched = matchPlayerInText(normText, rawUpper);
-        if (matched) {{
-          const key = normalize(matched.name);
-          if (!seenKeys.has(key)) {{
-            seenKeys.add(key);
-            picks.push({{
-              player_name: matched.name,
-              position: matched.pos,
-              team: matched.team,
-              is_user: myRosterKeys.has(key)
-            }});
+          }} else if (isTopTicker || isBoard) {{
+            // Skip the left available player list (X < 45% and Y > 100)
+            const isAvailableList = (rect.left < (winWidth * 0.45)) && (rect.top > 100);
+            if (!isAvailableList) {{
+              if (!seenKeys.has(key)) {{
+                seenKeys.add(key);
+                picks.push({{
+                  player_name: matched.name,
+                  position: matched.pos,
+                  team: matched.team,
+                  is_user: myRosterKeys.has(key)
+                }});
+              }}
+            }}
           }}
         }}
       }});
@@ -293,4 +275,4 @@ out_path = os.path.join(os.getcwd(), 'underdog-extension', 'content.js')
 with open(out_path, 'w', encoding='utf-8') as f:
     f.write(content_js_template)
 
-print(f"Generated ultra-fast {out_path} successfully!")
+print(f"Generated clean screen-coordinate {out_path} successfully!")
