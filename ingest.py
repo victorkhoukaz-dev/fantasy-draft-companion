@@ -506,6 +506,15 @@ def ingest_pdfs(force=False, target_file=None, mode="redraft"):
     if csv_takes:
         logging.info(f"Loaded {len(csv_takes)} official ranking takes from CSV files.")
         all_takes.extend(csv_takes)
+        for csv_path in glob.glob(os.path.join(raw_dir, "*.csv")):
+            fn = os.path.basename(csv_path)
+            manifest[fn] = {
+                "mtime": os.path.getmtime(csv_path),
+                "size": os.path.getsize(csv_path),
+                "take_count": len(csv_takes),
+                "ingested_at": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+        save_manifest(manifest, manifest_path)
 
     # Deduplicate takes based on player_name, author, and key_reason
     unique_takes = []

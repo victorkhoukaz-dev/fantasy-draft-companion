@@ -2038,10 +2038,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const picks = data.picks;
     if (!picks || picks.length === 0) return;
 
-    if (currentPlatformMode !== 'underdog') {
-      currentPlatformMode = 'underdog';
-      localStorage.setItem('fp_platform_mode', 'underdog');
-      loadPlatformData('underdog');
+    if (data.user_slot && (!myUdDraftSlot || myUdDraftSlot !== data.user_slot)) {
+      myUdDraftSlot = data.user_slot;
+      localStorage.setItem('fp_ud_draft_slot', String(data.user_slot));
+      if (udDraftSlotSelect) udDraftSlotSelect.value = String(data.user_slot);
     }
 
     const effectiveSlot = myUdDraftSlot || data.user_slot;
@@ -3053,7 +3053,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const teams = draftMetaObj?.settings?.teams || 12;
     const totalRounds = draftMetaObj?.settings?.rounds || 16;
 
-    const turnsInfo = calculateDraftTurns(currentPickNo, teams, myDraftSlot, totalRounds);
+    const effectiveDraftSlot = (currentPlatformMode === 'underdog')
+      ? (myUdDraftSlot || parseInt(localStorage.getItem('fp_ud_draft_slot') || localStorage.getItem('fp_relay_slot') || '0', 10) || null)
+      : myDraftSlot;
+
+    const turnsInfo = calculateDraftTurns(currentPickNo, teams, effectiveDraftSlot, totalRounds);
     const rosterNeeds = evaluateRosterNeeds(myRosterPlayers, turnsInfo.currentRound);
 
     // Available Undrafted Players
