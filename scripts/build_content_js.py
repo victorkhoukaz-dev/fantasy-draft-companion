@@ -71,38 +71,18 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     syncStatusEl.id = 'fp-ud-sync-badge';
     syncStatusEl.style.cssText = 'position: fixed; bottom: 16px; right: 16px; z-index: 9999999; background: #0f172a; border: 1px solid #10b981; color: #6ee7b7; padding: 7px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,0.6); display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; transition: all 0.2s ease;';
     syncStatusEl.innerHTML = '<span>🟢</span><span>FantasyPoints: Active</span>';
-    syncStatusEl.title = 'Click to set your draft slot or inspect sync';
+    syncStatusEl.title = 'Click to inspect detected picks';
     
     syncStatusEl.addEventListener('click', () => {{
-      const currentSlot = userSelectedSlot || 'Not set';
-      const promptVal = prompt(
+      const picks = parseDraftPicks();
+      const myPicks = picks.filter(p => p.is_user);
+      const myNames = myPicks.map(p => p.player_name).join(', ') || 'None detected yet';
+      alert(
         '🏈 FantasyPoints Underdog Live Relay\\n\\n' +
-        'Enter your Draft Slot number (1-12) to lock your picks to "My Roster":\\n' +
-        '(Example: Enter 4 if you have pick 1.04)\\n\\n' +
-        'Current Draft Slot: ' + currentSlot,
-        userSelectedSlot || ''
+        'Total Picks Found: ' + picks.length + '\\n' +
+        'My Roster (' + myPicks.length + ' players): ' + myNames + '\\n\\n' +
+        '(Picks sync automatically from your Roster panel on the right)'
       );
-      if (promptVal !== null) {{
-        const slotNum = parseInt(promptVal.trim(), 10);
-        if (slotNum >= 1 && slotNum <= 12) {{
-          userSelectedSlot = slotNum;
-          localStorage.setItem('fp_relay_slot', String(slotNum));
-        }} else {{
-          userSelectedSlot = null;
-          localStorage.removeItem('fp_relay_slot');
-        }}
-        
-        const picks = parseDraftPicks();
-        const myPicks = picks.filter(p => p.is_user);
-        const myNames = myPicks.map(p => p.player_name).join(', ') || 'None detected yet';
-        alert(
-          '✅ Draft Slot set to Slot ' + (userSelectedSlot || 'Auto') + '\\n\\n' +
-          'Found ' + picks.length + ' total drafted players in room.\\n' +
-          'My Roster (' + myPicks.length + ' players): ' + myNames
-        );
-        lastPicksCount = -1;
-        tick();
-      }}
     }});
 
     document.body.appendChild(syncStatusEl);
@@ -117,27 +97,18 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   }}
 
-  function getLoggedInUsername() {{
-    try {{
-      const userNav = document.querySelector('[data-testid*="user"], [class*="UserMenu"], [class*="user-menu"], [class*="Header_username"], [class*="ProfileButton"], [aria-label*="Account"], [aria-label*="Profile"]');
-      if (userNav) {{
-        const text = (userNav.innerText || userNav.getAttribute('aria-label') || '').trim();
-        if (text && text.length > 1 && !text.includes('Sign') && !text.includes('Log')) {{
-          return text.replace(/Account/i, '').replace(/Profile/i, '').trim().toLowerCase();
+  function findUserRosterPanel() {{
+    const allDivs = document.querySelectorAll('div, section, aside');
+    for (let i = 0; i < allDivs.length; i++) {{
+      const el = allDivs[i];
+      const text = (el.innerText || el.textContent || '').toLowerCase();
+      if (text.includes('pick position') || (text.includes('projected') && text.includes('qb') && text.includes('rb'))) {{
+        const r = el.getBoundingClientRect();
+        if (r.width > 120 && r.height > 150) {{
+          return el;
         }}
       }}
-      for (let i = 0; i < localStorage.length; i++) {{
-        const k = localStorage.key(i);
-        if (k && (k.includes('user') || k.includes('auth') || k.includes('session') || k.includes('profile'))) {{
-          try {{
-            const val = JSON.parse(localStorage.getItem(k));
-            if (val && val.username) return val.username.toLowerCase();
-            if (val && val.user && val.user.username) return val.user.username.toLowerCase();
-            if (val && val.handle) return val.handle.toLowerCase();
-          }} catch(e) {{}}
-        }}
-      }}
-    }} catch(e) {{}}
+    }}
     return null;
   }}
 
@@ -149,56 +120,25 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
       const testId = (cur.getAttribute && cur.getAttribute('data-testid') || '').toLowerCase();
       const aria = (cur.getAttribute && cur.getAttribute('aria-label') || '').toLowerCase();
       
+      // Do NOT filter out roster panel even if it has some generic classes
+      const text = (cur.innerText || '').toLowerCase();
+      if (text.includes('pick position') || text.includes('projected')) {{
+        return false;
+      }}
+
       if (
-        cls.includes('queue') || cls.includes('playerlist') || cls.includes('player-list') || 
+        cls.includes('playerlist') || cls.includes('player-list') || 
         cls.includes('available') || cls.includes('rankings') || cls.includes('ranking') ||
-        cls.includes('search') || cls.includes('drawer') || cls.includes('watch') ||
-        cls.includes('favorite') || cls.includes('star') || cls.includes('autopick') ||
-        id.includes('queue') || id.includes('player-list') || id.includes('playerlist') ||
-        id.includes('available') || id.includes('search') || id.includes('drawer') ||
-        testId.includes('queue') || testId.includes('player-list') || testId.includes('playerlist') ||
-        testId.includes('available') || testId.includes('search') || testId.includes('draft-queue') ||
-        aria.includes('queue') || aria.includes('available') || aria.includes('search') ||
-        aria.includes('star') || aria.includes('watch')
+        cls.includes('search') || cls.includes('queue') ||
+        id.includes('player-list') || id.includes('playerlist') ||
+        id.includes('available') || id.includes('search') || id.includes('queue') ||
+        testId.includes('player-list') || testId.includes('playerlist') ||
+        testId.includes('available') || testId.includes('search') || testId.includes('queue') ||
+        aria.includes('available') || aria.includes('search') || aria.includes('queue')
       ) {{
         return true;
       }}
       cur = cur.parentElement;
-    }}
-    return false;
-  }}
-
-  function isInsideUserContainer(el, username, colSlot) {{
-    if (!el || isInsideAvailableQueue(el)) return false;
-
-    if (userSelectedSlot && colSlot && colSlot === userSelectedSlot) {{
-      return true;
-    }}
-
-    let cur = el;
-    let depth = 0;
-    while (cur && cur !== document.body && depth < 10) {{
-      const text = (cur.innerText || cur.textContent || '').toLowerCase();
-      const cls = (typeof cur.className === 'string' ? cur.className : '').toLowerCase();
-      const testId = (cur.getAttribute && cur.getAttribute('data-testid') || '').toLowerCase();
-      const aria = (cur.getAttribute && cur.getAttribute('aria-label') || '').toLowerCase();
-
-      if (
-        text.includes('(you)') || text.includes('my team') ||
-        cls.includes('my-team') || cls.includes('user-pick') || cls.includes('is-user') ||
-        testId.includes('my-team') || testId.includes('user-pick') || aria.includes('my team')
-      ) {{
-        return true;
-      }}
-
-      if (username && username.length > 2) {{
-        if (text.includes(username) || cls.includes(username)) {{
-          return true;
-        }}
-      }}
-
-      cur = cur.parentElement;
-      depth++;
     }}
     return false;
   }}
@@ -207,7 +147,7 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     for (let i = 0; i < KNOWN_PLAYERS.length; i++) {{
       const kp = KNOWN_PLAYERS[i];
       
-      // 1. Exact Full Name Match (e.g. "malikwashington", "brianrobinson", "bijanrobinson")
+      // 1. Exact Full Name Match (e.g. "christianmccaffrey", "chrisolave", "zayflowers")
       if (normText.includes(kp.clean)) {{
         return kp;
       }}
@@ -217,12 +157,12 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
         return kp;
       }}
 
-      // 3. Unambiguous Short Initial Match (e.g. "p. nacua", "j. gibbs")
+      // 3. Unambiguous Short Initial Match (e.g. "c. mccaffrey", "c. olave", "z. flowers")
       if (!kp.is_ambiguous && kp.short.length > 4 && normText.includes(kp.short)) {{
         return kp;
       }}
 
-      // 4. Ambiguous Short Initial Match WITH Team or Position Verification (e.g. "b. robinson" + "ATL" or "WAS")
+      // 4. Ambiguous Short Initial Match WITH Team or Position Verification
       if (kp.is_ambiguous && (normText.includes(kp.short) || normText.includes(kp.short_no_suffix))) {{
         if (rawUpperText.includes(kp.team) || rawUpperText.includes(kp.pos)) {{
           return kp;
@@ -234,16 +174,45 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
 
   function parseDraftPicks() {{
     try {{
-      const rawFoundPicks = [];
+      const picks = [];
       const seenKeys = new Set();
-      const username = getLoggedInUsername();
+      const myRosterKeys = new Set();
 
-      // Scan all potential pick cells, columns, and board tiles
-      const candidateElements = document.querySelectorAll(
-        '[class*="board"] div, [class*="Board"] div, [class*="grid"] div, [class*="Grid"] div, [class*="column"] div, [class*="Column"] div, [class*="card"], [class*="Card"], [class*="tile"], [class*="Tile"], [class*="pick"], [class*="Pick"], [data-testid*="pick"], [data-testid*="cell"], div'
+      // Step 1: Scan the User Roster Panel on the right (100% Guaranteed User Picks)
+      const rosterPanel = findUserRosterPanel();
+      if (rosterPanel) {{
+        const rosterElements = rosterPanel.querySelectorAll('div, li, p, span, tr');
+        rosterElements.forEach(el => {{
+          if (el.children.length > 6) return;
+          const text = (el.innerText || el.textContent || '').trim();
+          if (!text || text.length < 3 || text.length > 120) return;
+
+          const normText = normalize(text);
+          const rawUpper = text.toUpperCase();
+
+          const matched = matchPlayerInText(normText, rawUpper);
+          if (matched) {{
+            const key = normalize(matched.name);
+            if (!myRosterKeys.has(key)) {{
+              myRosterKeys.add(key);
+              seenKeys.add(key);
+              picks.push({{
+                player_name: matched.name,
+                position: matched.pos,
+                team: matched.team,
+                is_user: true
+              }});
+            }}
+          }}
+        }});
+      }}
+
+      // Step 2: Scan all other completed picks in the room (Top Ticker, Board, History)
+      const allElements = document.querySelectorAll(
+        '[class*="ticker"] div, [class*="Ticker"] div, [class*="carousel"] div, [class*="Carousel"] div, [class*="board"] div, [class*="Board"] div, [class*="grid"] div, [class*="Grid"] div, [class*="column"] div, [class*="Column"] div, [class*="card"], [class*="Card"], [class*="tile"], [class*="Tile"], [class*="pick"], [class*="Pick"], [data-testid*="pick"], [data-testid*="cell"], div'
       );
 
-      candidateElements.forEach(el => {{
+      allElements.forEach(el => {{
         if (isInsideAvailableQueue(el)) return;
         if (el.children.length > 8) return;
 
@@ -253,63 +222,19 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
         const normText = normalize(text);
         const rawUpper = text.toUpperCase();
 
-        const matchedPlayer = matchPlayerInText(normText, rawUpper);
-        if (matchedPlayer) {{
-          const key = normalize(matchedPlayer.name);
+        const matched = matchPlayerInText(normText, rawUpper);
+        if (matched) {{
+          const key = normalize(matched.name);
           if (!seenKeys.has(key)) {{
             seenKeys.add(key);
-
-            let posX = 0;
-            try {{
-              const r = el.getBoundingClientRect();
-              posX = r.left + (r.width / 2);
-            }} catch(e) {{}}
-
-            rawFoundPicks.push({{
-              player_name: matchedPlayer.name,
-              position: matchedPlayer.pos,
-              team: matchedPlayer.team,
-              posX: posX,
-              el: el
+            picks.push({{
+              player_name: matched.name,
+              position: matched.pos,
+              team: matched.team,
+              is_user: myRosterKeys.has(key)
             }});
           }}
         }}
-      }});
-
-      // Cluster all detected picks by horizontal X coordinate into 12 column clusters
-      const clusters = [];
-      rawFoundPicks.forEach(p => {{
-        if (p.posX > 0) {{
-          let matchedCluster = clusters.find(c => Math.abs(c.x - p.posX) < 40);
-          if (!matchedCluster) {{
-            matchedCluster = {{ x: p.posX, picks: [] }};
-            clusters.push(matchedCluster);
-          }}
-          matchedCluster.picks.push(p);
-        }}
-      }});
-
-      // Sort clusters left-to-right (Slot 1 to 12)
-      clusters.sort((a, b) => a.x - b.x);
-
-      // Assign slots to clusters
-      clusters.forEach((cluster, idx) => {{
-        const slotNum = idx + 1;
-        cluster.picks.forEach(p => {{
-          p.slot = slotNum;
-        }});
-      }});
-
-      // Build final picks list
-      const picks = rawFoundPicks.map(p => {{
-        const isUser = (userSelectedSlot && p.slot && p.slot === userSelectedSlot) || isInsideUserContainer(p.el, username, p.slot);
-        return {{
-          player_name: p.player_name,
-          position: p.position,
-          team: p.team,
-          slot: p.slot || null,
-          is_user: Boolean(isUser)
-        }};
       }});
 
       return picks;
@@ -323,7 +248,6 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     const payload = {{
       type: 'UNDERDOG_PICKS_SYNC',
       draft_id: draftId,
-      user_slot: userSelectedSlot,
       picks: picks,
       timestamp: Date.now()
     }};
@@ -352,10 +276,9 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
       const draftId = getDraftId();
 
       if (syncStatusEl) {{
+        const userPicks = picks.filter(p => p.is_user);
         if (picks.length > 0) {{
-          const userPicksCount = picks.filter(p => p.is_user).length;
-          const slotLabel = userSelectedSlot ? ' [Slot ' + userSelectedSlot + ']' : '';
-          syncStatusEl.innerHTML = '<span>🟢</span><span>FantasyPoints: Syncing (#' + picks.length + ' picks' + (userPicksCount > 0 ? ', ' + userPicksCount + ' mine' : '') + slotLabel + ')</span>';
+          syncStatusEl.innerHTML = '<span>🟢</span><span>FantasyPoints: Syncing (#' + picks.length + ' picks, ' + userPicks.length + ' mine)</span>';
           syncStatusEl.style.borderColor = '#10b981';
         }} else {{
           syncStatusEl.innerHTML = '<span>🟡</span><span>FantasyPoints: Relay Ready</span>';
@@ -391,4 +314,4 @@ out_path = os.path.join(os.getcwd(), 'underdog-extension', 'content.js')
 with open(out_path, 'w', encoding='utf-8') as f:
     f.write(content_js_template)
 
-print(f"Generated X-cluster {out_path} successfully!")
+print(f"Generated panel-aware {out_path} successfully!")
