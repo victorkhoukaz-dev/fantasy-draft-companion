@@ -69,12 +69,14 @@ VALID_TEAMS = {
 TEAM_ALIASES = {
     "ARZ": "ARI", "BLT": "BAL", "CLV": "CLE", "HST": "HOU", "LA": "LAR",
     "GBP": "GB", "KCC": "KC", "NEP": "NE", "NOS": "NO", "SFO": "SF",
-    "TBB": "TB", "WSH": "WAS", "WSHG": "WAS", "JAC": "JAX", "LVR": "LV"
+    "TBB": "TB", "WSH": "WAS", "WSHG": "WAS", "JAC": "JAX", "LVR": "LV",
+    "ND": "FA", "NOTRE DAME": "FA", "NC STATE": "FA", "OREGON": "FA",
+    "OKLAHOMA STATE": "FA", "UNKNOWN": "FA", "": "FA", "-": "FA"
 }
 
 def clean_team_code(team: str) -> str:
     if not team:
-        return "NFL"
+        return "FA"
     t = str(team).strip().upper()
     return TEAM_ALIASES.get(t, t)
 
@@ -156,6 +158,12 @@ def validate_takes(takes):
     return warnings
 
 def prepare_takes_for_save(takes):
+    for take in takes:
+        if "team" in take:
+            take["team"] = clean_team_code(take.get("team"))
+        if "position" in take:
+            take["position"] = str(take.get("position", "")).strip().upper()
+
     applied_count = apply_manual_corrections(takes)
     warnings = validate_takes(takes)
 

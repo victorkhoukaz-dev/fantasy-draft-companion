@@ -34,5 +34,59 @@
     "size": 4449190,
     "take_count": 135,
     "ingested_at": "2026-08-30 10:14:55"
+  },
+  "rankings.redraft.barrett QB.csv": {
+    "mtime": 1787975133.4334216,
+    "size": 1130,
+    "take_count": 701,
+    "ingested_at": "2026-08-30 20:20:46"
+  },
+  "rankings.redraft.barrett RB.csv": {
+    "mtime": 1787975133.4334216,
+    "size": 1806,
+    "take_count": 701,
+    "ingested_at": "2026-08-30 20:20:46"
+  },
+  "rankings.redraft.barrett TE.csv": {
+    "mtime": 1787975133.4344244,
+    "size": 1070,
+    "take_count": 701,
+    "ingested_at": "2026-08-30 20:20:46"
+  },
+  "rankings.redraft.barrett WR.csv": {
+    "mtime": 1787975133.4353309,
+    "size": 3598,
+    "take_count": 701,
+    "ingested_at": "2026-08-30 20:20:46"
+  },
+  "rankings.redraft.hansen QB.csv": {
+    "mtime": 1787975133.4359386,
+    "size": 3721,
+    "take_count": 701,
+    "ingested_at": "2026-08-30 20:20:46"
+  },
+  "rankings.redraft.hansen RB.csv": {
+    "mtime": 1787975133.4359386,
+    "size": 6723,
+    "take_count": 701,
+    "ingested_at": "2026-08-30 20:20:46"
+  },
+  "rankings.redraft.hansen TE.csv": {
+    "mtime": 1787975133.4359386,
+    "size": 4443,
+    "take_count": 701,
+    "ingested_at": "2026-08-30 20:20:46"
+  },
+  "rankings.redraft.hansen WR.csv": {
+    "mtime": 1787975133.4359386,
+    "size": 10068,
+    "take_count": 701,
+    "ingested_at": "2026-08-30 20:20:46"
+  },
+  "rankings.redraft.top-200.csv": {
+    "mtime": 1787975133.4359386,
+    "size": 8832,
+    "take_count": 701,
+    "ingested_at": "2026-08-30 20:20:46"
   }
 }

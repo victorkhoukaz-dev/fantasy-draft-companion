@@ -112,7 +112,7 @@ class ArticleExtraction(BaseModel):
 | `fp_ai_hud_collapsed` | Boolean | Minimized state of AI Advisor HUD body |
 
 ### 3. Key UI Components & Interactions
-* **AI Live Draft Advisor HUD**: Dynamic header widget providing real-time draft turn calculations, mathematical survival probability to the user's *subsequent* turn, tier cliff warnings, primary pick recommendations, backup pivots, and on-demand or automatic deep reasoning via Google Gemini.
+* **AI Live Draft Advisor HUD**: Dynamic header widget providing real-time draft turn calculations, mathematical survival probability to the user's *subsequent* turn, tier cliff warnings, primary pick recommendations, backup pivots, and on-demand or automatic deep reasoning via Google Gemini / Groq.
 * **Header Bar**: Live Sleeper API status badge, total/active player counters, global search bar, sorting dropdown, position filter chips (`ALL`, `DECK`, `QB`, `RB`, `WR`, `TE`), AI Advisor toggle button, and AI Settings modal trigger.
 * **Player Board Grid**: Rendered dynamically via `app.js`. Highlights stance badges with custom CSS gradients, target round advice, consensus metrics, and action buttons (*Draft*, *Taken*, *Star*, *Compare*).
 * **Roster Sidebar**: Displays 15 standard lineup slots (`QB1`, `RB1`, `RB2`, `WR1`, `WR2`, `TE1`, `FLEX1`, `FLEX2`, `BENCH1-7`).

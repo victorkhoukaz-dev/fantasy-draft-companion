@@ -503,19 +503,30 @@ document.addEventListener('DOMContentLoaded', () => {
         const numMatch = String(take.fp_pos_rank).match(/\d+/);
         const posNum = numMatch ? parseInt(numMatch[0], 10) : 99;
         const authorList = getCleanAuthorsList(take.author);
+        const isOfficial = !!take.is_official_ranking;
+
         authorList.forEach(authorName => {
-          playerObj.author_pos_ranks.set(authorName, {
-            pos_rank: take.fp_pos_rank,
-            pos_num: posNum
-          });
-          if (authorName === 'FantasyPoints Staff' || take.is_official_ranking || !playerObj.fp_pos_num) {
+          const existing = playerObj.author_pos_ranks.get(authorName);
+          // High-conviction rule: Official ranking (from CSV or cheat sheet) ALWAYS wins and is never overwritten by unofficial PDF article takes
+          if (!existing || isOfficial || !existing.is_official) {
+            playerObj.author_pos_ranks.set(authorName, {
+              pos_rank: take.fp_pos_rank,
+              pos_num: posNum,
+              is_official: isOfficial
+            });
+          }
+          if (isOfficial && (authorName === 'FantasyPoints Staff' || !playerObj._has_official_pos_rank)) {
+            playerObj.fp_pos_rank = take.fp_pos_rank;
+            playerObj.fp_pos_num = posNum;
+            playerObj._has_official_pos_rank = true;
+          } else if (!playerObj.fp_pos_num) {
             playerObj.fp_pos_rank = take.fp_pos_rank;
             playerObj.fp_pos_num = posNum;
           }
         });
       }
 
-      if (take.fp_overall_rank && (take.author === 'FantasyPoints Staff' || take.key_reason?.includes('Top-200') || take.key_reason?.includes('Best Ball Rank'))) {
+      if (take.fp_overall_rank && take.is_official_ranking && (take.author === 'FantasyPoints Staff' || take.key_reason?.includes('Top-200') || take.key_reason?.includes('Best Ball Rank'))) {
         playerObj.fp_overall_rank = take.fp_overall_rank;
       }
 
@@ -1097,8 +1108,17 @@ document.addEventListener('DOMContentLoaded', () => {
     let displayedRank = '—';
 
     if (!isSinglePosView) {
-      // In ALL or DECK view: display the Top-200 overall rank number!
-      displayedRank = player.fp_overall_rank ? `${player.fp_overall_rank}` : '—';
+      if (currentAuthorFilter && currentAuthorFilter !== 'Consensus' && currentAuthorFilter !== 'ALL') {
+        const authPosObj = player.author_pos_ranks?.get(currentAuthorFilter);
+        if (authPosObj && authPosObj.pos_rank) {
+          displayedRank = authPosObj.pos_rank;
+        } else if (player.fp_overall_rank) {
+          displayedRank = `${player.fp_overall_rank}`;
+        }
+      } else {
+        // In Consensus ALL or DECK view: display the Top-200 overall rank number!
+        displayedRank = player.fp_overall_rank ? `${player.fp_overall_rank}` : (player.fp_pos_rank || '—');
+      }
     } else {
       // In Position views: display positional numerical rank!
       let rawRankStr = player.fp_pos_rank || player.pos_rank || '—';

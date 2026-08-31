@@ -23,5 +23,52 @@
   },
   "Kyren Williams": {
     "team": "LAR"
+  },
+  "Josh Jacobs": {
+    "position": "RB",
+    "team": "GB"
+  },
+  "Jonathan Brooks": {
+    "position": "RB",
+    "team": "CAR"
+  },
+  "Jonathon Brooks": {
+    "position": "RB",
+    "team": "CAR"
+  },
+  "Jordyn Tyson": {
+    "position": "WR",
+    "team": "FA"
+  },
+  "Ashton Jeanty": {
+    "position": "RB",
+    "team": "FA"
+  },
+  "Brock Purdy": {
+    "position": "QB",
+    "team": "SF"
+  },
+  "Travis Kelce": {
+    "position": "TE",
+    "team": "KC"
+  },
+  "Breece Hall": {
+    "team": "NYJ"
+  },
+  "Jayden Higgins": {
+    "position": "WR",
+    "team": "FA"
+  },
+  "Makai Lemon": {
+    "position": "WR",
+    "team": "FA"
+  },
+  "Cam Skattebo": {
+    "position": "RB",
+    "team": "FA"
+  },
+  "K.C. Concepcion": {
+    "position": "WR",
+    "team": "FA"
   }
 }
