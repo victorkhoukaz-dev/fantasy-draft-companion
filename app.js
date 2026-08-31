@@ -390,8 +390,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const posRank = posCounters[pos] ? `${pos}${posCounters[pos]}` : pos;
 
         sleeperAdpMap.set(norm, {
-          adp: overallRank,
-          exact_adp: item.exact_adp,
+          adp: item.exact_adp || overallRank,
+          exact_adp: item.exact_adp || overallRank,
+          adp_rank: overallRank,
           position: pos,
           team: p.team || 'NFL',
           full_name: p.full_name,
@@ -458,7 +459,7 @@ document.addEventListener('DOMContentLoaded', () => {
           player_name: info.full_name,
           position: info.position,
           team: info.team,
-          sleeper_adp: info.adp,
+          sleeper_adp: info.exact_adp || info.adp,
           exact_adp: info.exact_adp || info.adp,
           pos_rank: info.pos_rank,
           pos_num: info.pos_num || 99,
@@ -477,7 +478,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const displayName = adpInfo?.full_name || rawName;
       const position = take.position || adpInfo?.position || 'FLEX';
       const team = take.team || adpInfo?.team || 'NFL';
-      const marketAdp = adpInfo?.adp || 300;
+      const marketAdp = adpInfo?.exact_adp || adpInfo?.adp || 300;
       const posRank = adpInfo?.pos_rank || `${position}`;
 
       if (!groupedPlayersMap.has(canonicalKey)) {
@@ -487,7 +488,7 @@ document.addEventListener('DOMContentLoaded', () => {
           position: position,
           team: team,
           sleeper_adp: marketAdp,
-          exact_adp: adpInfo?.exact_adp || marketAdp,
+          exact_adp: marketAdp,
           pos_rank: posRank,
           pos_num: adpInfo?.pos_num || 99,
           raw_takes: [],
