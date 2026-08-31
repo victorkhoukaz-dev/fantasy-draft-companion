@@ -24,7 +24,8 @@ document.addEventListener('DOMContentLoaded', () => {
   loadDraftState();
 
   let currentPosFilter = 'ALL';
-  let currentAuthorFilter = localStorage.getItem('fp_rank_source') || 'Consensus';
+  const savedSource = localStorage.getItem('fp_rank_source');
+  let currentAuthorFilter = (savedSource === 'Consensus' || !savedSource) ? 'Scott Barrett' : savedSource;
   let searchQuery = '';
   const savedSort = localStorage.getItem('fp_sort_by');
   let sortBy = (savedSort === 'pos_rank' || savedSort === 'adp') ? savedSort : 'pos_rank';
@@ -291,12 +292,12 @@ document.addEventListener('DOMContentLoaded', () => {
         currentAuthorFilter = 'Consensus';
       } else {
         authorFilterSelect.innerHTML = `
-          <option value="Consensus" selected>🏆 Consensus Rankings</option>
+          <option value="Scott Barrett" selected>🏆 Scott Barrett</option>
           <option value="John Hansen">John Hansen</option>
-          <option value="Scott Barrett">Scott Barrett</option>
           <option value="Graham Barfield">Graham Barfield</option>
         `;
-        currentAuthorFilter = localStorage.getItem('fp_rank_source') || 'Consensus';
+        const saved = localStorage.getItem('fp_rank_source');
+        currentAuthorFilter = (saved === 'Consensus' || !saved) ? 'Scott Barrett' : saved;
         authorFilterSelect.value = currentAuthorFilter;
       }
     }
@@ -526,8 +527,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
 
-      if (take.fp_overall_rank && take.is_official_ranking && (take.author === 'FantasyPoints Staff' || take.key_reason?.includes('Top-200') || take.key_reason?.includes('Best Ball Rank'))) {
-        playerObj.fp_overall_rank = take.fp_overall_rank;
+      if (mode === 'underdog') {
+        if (take.fp_overall_rank && take.is_official_ranking && (take.author === 'FantasyPoints Staff' || take.key_reason?.includes('Best Ball Rank'))) {
+          playerObj.fp_overall_rank = take.fp_overall_rank;
+        }
+      } else {
+        // In Redraft mode: ONLY Scott Barrett's official overall ranking sets fp_overall_rank
+        if (take.author === 'Scott Barrett' && take.is_official_ranking && take.fp_overall_rank && (take.source_file === 'rankings.redraft.barrett.overall.csv' || (take.key_reason || '').includes('Official Scott Barrett Overall'))) {
+          playerObj.fp_overall_rank = take.fp_overall_rank;
+        }
       }
 
       // Check if take is a generic CSV ranking entry (no written commentary)
@@ -677,15 +685,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Update Rank Source Dropdown State (Disable other authors on ALL / DECK tabs)
     const isGlobalView = (currentPosFilter === 'ALL' || currentPosFilter === 'DECK');
+    const defaultAuthor = (currentPlatformMode === 'underdog') ? 'Consensus' : 'Scott Barrett';
     if (authorFilterSelect && authorFilterSelect.options) {
       Array.from(authorFilterSelect.options).forEach(opt => {
-        if (opt && opt.value !== 'Consensus') {
+        if (opt && opt.value !== defaultAuthor) {
           opt.disabled = isGlobalView;
         }
       });
       if (isGlobalView) {
-        authorFilterSelect.value = 'Consensus';
-        currentAuthorFilter = 'Consensus';
+        authorFilterSelect.value = defaultAuthor;
+        currentAuthorFilter = defaultAuthor;
       }
     }
 
@@ -693,15 +702,14 @@ document.addEventListener('DOMContentLoaded', () => {
     playersArray.sort((a, b) => {
       if (sortBy === 'pos_rank' || sortBy === 'rank') {
         if (isGlobalView) {
-          const rankA = a.fp_overall_rank || 999;
-          const rankB = b.fp_overall_rank || 999;
+          const rankA = a.fp_overall_rank || (a.sleeper_adp ? a.sleeper_adp + 1000 : 9999);
+          const rankB = b.fp_overall_rank || (b.sleeper_adp ? b.sleeper_adp + 1000 : 9999);
           if (rankA !== rankB) return rankA - rankB;
           return a.sleeper_adp - b.sleeper_adp;
         }
 
-        const isAnalyst = (currentAuthorFilter && currentAuthorFilter !== 'Consensus' && currentAuthorFilter !== 'ALL');
-        const rankA = (isAnalyst ? a.author_pos_ranks?.get(currentAuthorFilter)?.pos_num : null) || a.fp_pos_num || 999;
-        const rankB = (isAnalyst ? b.author_pos_ranks?.get(currentAuthorFilter)?.pos_num : null) || b.fp_pos_num || 999;
+        const rankA = (currentAuthorFilter ? a.author_pos_ranks?.get(currentAuthorFilter)?.pos_num : null) || a.fp_pos_num || 999;
+        const rankB = (currentAuthorFilter ? b.author_pos_ranks?.get(currentAuthorFilter)?.pos_num : null) || b.fp_pos_num || 999;
 
         if (rankA !== rankB) return rankA - rankB;
         return a.sleeper_adp - b.sleeper_adp;
@@ -1108,26 +1116,20 @@ document.addEventListener('DOMContentLoaded', () => {
     let displayedRank = '—';
 
     if (!isSinglePosView) {
-      if (currentAuthorFilter && currentAuthorFilter !== 'Consensus' && currentAuthorFilter !== 'ALL') {
-        const authPosObj = player.author_pos_ranks?.get(currentAuthorFilter);
+      if (currentAuthorFilter && currentAuthorFilter === 'John Hansen') {
+        const authPosObj = player.author_pos_ranks?.get('John Hansen');
         if (authPosObj && authPosObj.pos_rank) {
           displayedRank = authPosObj.pos_rank;
         } else if (player.fp_overall_rank) {
           displayedRank = `${player.fp_overall_rank}`;
         }
       } else {
-        // In Consensus ALL or DECK view: display the Top-200 overall rank number!
-        displayedRank = player.fp_overall_rank ? `${player.fp_overall_rank}` : (player.fp_pos_rank || '—');
+        // In Consensus or Scott Barrett ALL/DECK view: display Barrett's Overall Rank (1 to 125) or '—'
+        displayedRank = player.fp_overall_rank ? `${player.fp_overall_rank}` : '—';
       }
     } else {
       // In Position views: display positional numerical rank!
-      let rawRankStr = player.fp_pos_rank || player.pos_rank || '—';
-      if (currentAuthorFilter && currentAuthorFilter !== 'Consensus' && currentAuthorFilter !== 'ALL') {
-        const authPosObj = player.author_pos_ranks?.get(currentAuthorFilter);
-        if (authPosObj && authPosObj.pos_rank) {
-          rawRankStr = authPosObj.pos_rank;
-        }
-      }
+      let rawRankStr = player.author_pos_ranks?.get(currentAuthorFilter)?.pos_rank || player.fp_pos_rank || player.pos_rank || '—';
       displayedRank = (rawRankStr !== '—') ? rawRankStr.replace(/^[A-Za-z]+/, '') : '—';
     }
 

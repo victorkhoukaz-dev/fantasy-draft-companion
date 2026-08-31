@@ -163,6 +163,10 @@ def prepare_takes_for_save(takes):
             take["team"] = clean_team_code(take.get("team"))
         if "position" in take:
             take["position"] = str(take.get("position", "")).strip().upper()
+        if not take.get("is_official_ranking"):
+            take["fp_overall_rank"] = None
+        elif not ("overall" in str(take.get("source_file", "")).lower() or "underdog" in str(take.get("source_file", "")).lower() or "best-ball" in str(take.get("source_file", "")).lower() or (take.get("key_reason") or "").startswith("Official Scott Barrett Overall")):
+            take["fp_overall_rank"] = None
 
     applied_count = apply_manual_corrections(takes)
     warnings = validate_takes(takes)
@@ -376,7 +380,7 @@ def ingest_pdfs(force=False, target_file=None, mode="redraft"):
                 with open(db_path, "r", encoding="utf-8") as f:
                     existing_data = json.load(f)
                     if isinstance(existing_data, list):
-                        all_takes = [t for t in existing_data if not t.get("source_file", "").endswith(".csv")]
+                        all_takes = [t for t in existing_data if not t.get("source_file", "").endswith(".csv") and not is_skipped_file(t.get("source_file", ""))]
             except Exception as e:
                 logging.warning(f"Could not parse existing {os.path.basename(db_path)}: {e}")
     else:
@@ -387,7 +391,7 @@ def ingest_pdfs(force=False, target_file=None, mode="redraft"):
                 with open(db_path, "r", encoding="utf-8") as f:
                     existing_data = json.load(f)
                     if isinstance(existing_data, list):
-                        all_takes = [t for t in existing_data if t.get("source_file") not in pending_filenames and not t.get("source_file", "").endswith(".csv")]
+                        all_takes = [t for t in existing_data if t.get("source_file") not in pending_filenames and not t.get("source_file", "").endswith(".csv") and not is_skipped_file(t.get("source_file", ""))]
             except Exception as e:
                 logging.warning(f"Could not parse existing {os.path.basename(db_path)}: {e}")
 
@@ -563,6 +567,8 @@ def parse_csv_rankings(raw_dir):
     csv_takes = []
     for csv_path in csv_files:
         filename = os.path.basename(csv_path)
+        if is_skipped_file(filename):
+            continue
         author = "FantasyPoints Staff"
         is_underdog_csv = "underdog" in filename.lower() or "best-ball" in filename.lower()
         
@@ -607,14 +613,18 @@ def parse_csv_rankings(raw_dir):
                     elif author == "Scott Barrett" and str(target).lower() in ["true", "1", "target", "yes"]:
                         stance = "Must-Draft"
 
-                    is_top200 = "top-200" in filename.lower() or is_underdog_csv
-                    overall_num = int(rank_str) if (is_top200 and rank_str.isdigit()) else None
+                    is_overall = "overall" in filename.lower() or "top-200" in filename.lower() or is_underdog_csv
+                    overall_num = int(rank_str) if (is_overall and rank_str.isdigit()) else None
 
                     if is_underdog_csv:
                         key_reason = f"Official FantasyPoints Underdog Best Ball Rank #{rank_str} ({pos_rank})"
                         upside_metric = f"Underdog ADP: {adp_str}" if adp_str else f"Best Ball Rank #{rank_str}"
+                    elif is_overall:
+                        auction_val = clean_row.get("$$$") or clean_row.get("auction") or ""
+                        key_reason = f"Official {author} Overall Rank #{rank_str}"
+                        upside_metric = f"Auction: {auction_val}" if auction_val else f"Official {author} Overall #{rank_str}"
                     else:
-                        key_reason = f"Official {author} Top-200 Overall Rank #{rank_str}" if is_top200 else (f"Official {author} positional ranking: {pos_rank} (Tier {tier})" if tier else f"Official {author} positional ranking: {pos_rank}")
+                        key_reason = f"Official {author} positional ranking: {pos_rank} (Tier {tier})" if tier else f"Official {author} positional ranking: {pos_rank}"
                         upside_metric = f"Official {author} Rank #{rank_str}"
 
                     take = {
@@ -627,7 +637,7 @@ def parse_csv_rankings(raw_dir):
                         "key_reason": key_reason,
                         "upside_metric": upside_metric,
                         "risk_factor": "",
-                        "fp_pos_rank": None if is_top200 and not pos_rank_explicit else pos_rank,
+                        "fp_pos_rank": None if (is_overall and not pos_rank_explicit) else pos_rank,
                         "fp_overall_rank": overall_num,
                         "is_official_ranking": True,
                         "source_file": filename
@@ -639,7 +649,7 @@ def parse_csv_rankings(raw_dir):
 
 def is_skipped_file(filename):
     fn = filename.lower()
-    return "overvalues" in fn or ("targets" in fn and "ft staff" in fn) or "fp staff" in fn
+    return "overvalues" in fn or ("targets" in fn and "ft staff" in fn) or "fp staff" in fn or "cheat-sheet" in fn or "projections" in fn or "top-200" in fn
 
 def watch_folder(mode="all"):
     print("\n[Auto-Watcher Active] 🔍 Monitoring 'raw_articles/redraft/' AND 'raw_articles/underdog/' for new PDFs/CSVs...")
