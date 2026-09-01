@@ -706,11 +706,79 @@ def watch_folder(mode="all"):
 
         time.sleep(3)
 
+def ingest_csvs_only(mode="redraft"):
+    cfg = get_mode_config(mode)
+    raw_dir = cfg["raw_dir"]
+    db_path = cfg["db_path"]
+    manifest_path = cfg["manifest_path"]
+    mode_label = cfg["label"]
+
+    logging.info(f"Ingesting CSV rankings only for [{mode_label}] from {raw_dir}...")
+    
+    # Load existing database to preserve PDF takes
+    existing_takes = []
+    if os.path.exists(db_path):
+        try:
+            with open(db_path, "r", encoding="utf-8") as f:
+                existing_takes = json.load(f)
+        except Exception as e:
+            logging.warning(f"Could not load existing {db_path}: {e}")
+
+    # Retain non-CSV / analytical takes
+    preserved_takes = [t for t in existing_takes if not t.get("is_official_ranking") and not str(t.get("source_file", "")).endswith(".csv")]
+    
+    csv_takes = parse_csv_rankings(raw_dir)
+    logging.info(f"Parsed {len(csv_takes)} official ranking takes from CSV files.")
+    
+    all_takes = preserved_takes + csv_takes
+
+    # Deduplicate takes
+    unique_takes = []
+    seen = set()
+    for take in all_takes:
+        name = take.get("player_name", "").strip()
+        author = take.get("author", "").strip()
+        stance = take.get("stance", "").strip()
+        reason = take.get("key_reason", "").strip()[:40]
+        key = (name.lower(), author.lower(), stance.lower(), reason.lower())
+        if key not in seen and name:
+            seen.add(key)
+            unique_takes.append(take)
+
+    prepare_takes_for_save(unique_takes)
+
+    with open(db_path, "w", encoding="utf-8") as f:
+        json.dump(unique_takes, f, indent=2, ensure_ascii=False)
+
+    manifest = load_manifest(manifest_path)
+    for csv_path in glob.glob(os.path.join(raw_dir, "*.csv")):
+        fn = os.path.basename(csv_path)
+        manifest[fn] = {
+            "mtime": os.path.getmtime(csv_path),
+            "size": os.path.getsize(csv_path),
+            "take_count": len(csv_takes),
+            "ingested_at": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+    save_manifest(manifest, manifest_path)
+
+    if mode == "underdog":
+        try:
+            import subprocess
+            subprocess.run([sys.executable, os.path.join(BASE_DIR, "scripts", "ingest_underdog_adp.py")], check=True)
+            subprocess.run([sys.executable, os.path.join(BASE_DIR, "scripts", "build_content_js.py")], check=True)
+            logging.info("Auto-updated underdog_adp.json and underdog-extension/content.js from CSV!")
+        except Exception as e:
+            logging.warning(f"Post-ingest script hook warning: {e}")
+
+    print(f"\n[+] Success! [{mode_label}] CSV ingestion complete. Database updated ({os.path.basename(db_path)}): {len(unique_takes)} total player takes ({len(csv_takes)} from CSVs).\n")
+    return True
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="FantasyPoints Article Ingestion Pipeline")
     parser.add_argument("--mode", "-m", choices=["redraft", "underdog", "bestball", "bb"], default="redraft", help="Draft mode target (default: redraft)")
-    parser.add_argument("--watch", "-w", action="store_true", help="Monitor folder and auto-ingest new PDFs")
+    parser.add_argument("--csv", "-c", action="store_true", help="Ingest CSV rankings only without calling Gemini API (fast)")
+    parser.add_argument("--watch", "-w", action="store_true", help="Monitor folder and auto-ingest new PDFs/CSVs")
     parser.add_argument("--validate", action="store_true", help="Validate existing database without calling Gemini API")
     parser.add_argument("--force", "-f", action="store_true", help="Force re-ingestion of all PDFs")
     parser.add_argument("--file", type=str, default=None, help="Target specific PDF filename to ingest")
@@ -718,7 +786,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     target_mode = "underdog" if args.mode in ["underdog", "bestball", "bb"] else "redraft"
 
-    if args.watch:
+    if args.csv:
+        ingest_csvs_only(mode=target_mode)
+    elif args.watch:
         watch_mode = "all" if args.mode == "redraft" else target_mode
         watch_folder(mode=watch_mode)
     elif args.validate:

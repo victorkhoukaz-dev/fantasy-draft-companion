@@ -1,9 +1,9 @@
 {
   "Scott Barrett draft guide.pdf": {
-    "mtime": 1788098925.4583647,
-    "size": 24113510,
-    "take_count": 78,
-    "ingested_at": "2026-08-30 10:29:14"
+    "mtime": 1788226264.3683186,
+    "size": 13221461,
+    "take_count": 34,
+    "ingested_at": "2026-08-31 21:36:17"
   },
   "Ryan heath draft guide.pdf": {
     "mtime": 1788098972.291292,
@@ -36,52 +36,52 @@
     "ingested_at": "2026-08-30 10:14:55"
   },
   "rankings.redraft.barrett QB.csv": {
-    "mtime": 1787975133.4334216,
-    "size": 1130,
-    "take_count": 626,
-    "ingested_at": "2026-08-30 21:27:12"
+    "mtime": 1788225625.1862073,
+    "size": 1265,
+    "take_count": 646,
+    "ingested_at": "2026-08-31 21:36:18"
   },
   "rankings.redraft.barrett RB.csv": {
-    "mtime": 1787975133.4334216,
-    "size": 1806,
-    "take_count": 626,
-    "ingested_at": "2026-08-30 21:27:12"
+    "mtime": 1788225645.6165862,
+    "size": 2226,
+    "take_count": 646,
+    "ingested_at": "2026-08-31 21:36:18"
   },
   "rankings.redraft.barrett TE.csv": {
-    "mtime": 1787975133.4344244,
-    "size": 1070,
-    "take_count": 626,
-    "ingested_at": "2026-08-30 21:27:12"
+    "mtime": 1788225582.3692439,
+    "size": 1732,
+    "take_count": 646,
+    "ingested_at": "2026-08-31 21:36:18"
   },
   "rankings.redraft.barrett WR.csv": {
-    "mtime": 1787975133.4353309,
-    "size": 3598,
-    "take_count": 626,
-    "ingested_at": "2026-08-30 21:27:12"
+    "mtime": 1788225656.1886914,
+    "size": 4184,
+    "take_count": 646,
+    "ingested_at": "2026-08-31 21:36:18"
   },
   "rankings.redraft.hansen QB.csv": {
-    "mtime": 1787975133.4359386,
-    "size": 3721,
-    "take_count": 626,
-    "ingested_at": "2026-08-30 21:27:12"
+    "mtime": 1788225388.4257667,
+    "size": 3793,
+    "take_count": 646,
+    "ingested_at": "2026-08-31 21:36:18"
   },
   "rankings.redraft.hansen RB.csv": {
-    "mtime": 1787975133.4359386,
-    "size": 6723,
-    "take_count": 626,
-    "ingested_at": "2026-08-30 21:27:12"
+    "mtime": 1788225393.7495587,
+    "size": 6782,
+    "take_count": 646,
+    "ingested_at": "2026-08-31 21:36:18"
   },
   "rankings.redraft.hansen TE.csv": {
-    "mtime": 1787975133.4359386,
-    "size": 4443,
-    "take_count": 626,
-    "ingested_at": "2026-08-30 21:27:12"
+    "mtime": 1788225399.3984725,
+    "size": 4440,
+    "take_count": 646,
+    "ingested_at": "2026-08-31 21:36:18"
   },
   "rankings.redraft.hansen WR.csv": {
-    "mtime": 1787975133.4359386,
-    "size": 10068,
-    "take_count": 626,
-    "ingested_at": "2026-08-30 21:27:12"
+    "mtime": 1788225396.6146953,
+    "size": 10052,
+    "take_count": 646,
+    "ingested_at": "2026-08-31 21:36:18"
   },
   "rankings.redraft.top-200.csv": {
     "mtime": 1787975133.4359386,
@@ -90,9 +90,9 @@
     "ingested_at": "2026-08-30 21:27:12"
   },
   "rankings.redraft.barrett.overall.csv": {
-    "mtime": 1788139109.772077,
+    "mtime": 1788225278.9370563,
     "size": 5836,
-    "take_count": 626,
-    "ingested_at": "2026-08-30 21:27:12"
+    "take_count": 646,
+    "ingested_at": "2026-08-31 21:36:18"
   }
 }

@@ -416,7 +416,8 @@
     "risk_factor": "High target competition among Bears receiving options",
     "fp_pos_rank": "TE5",
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Patrick Mahomes",
@@ -430,7 +431,8 @@
     "risk_factor": "Passing efficiency flatlined over last 3 years (4.5% TD, 7.0 YPA) compared to first 5 seasons (6.5% TD, 8.1 YPA)",
     "fp_pos_rank": "QB13",
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Travis Kelce",
@@ -444,7 +446,8 @@
     "risk_factor": "Earned just 16.8% target share (TE10) over last 11 full games with Rashee Rice on the field",
     "fp_pos_rank": "TE10",
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Ken Walker",
@@ -458,7 +461,8 @@
     "risk_factor": "Chiefs overall scoring drive efficiency has dropped in recent seasons",
     "fp_pos_rank": null,
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Josh Jacobs",
@@ -472,7 +476,8 @@
     "risk_factor": "Pending NFL decision on domestic violence investigation suspension",
     "fp_pos_rank": null,
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Jordan Love",
@@ -486,7 +491,8 @@
     "risk_factor": "Packers pass volume projections are relatively moderate",
     "fp_pos_rank": "QB7",
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Christian Watson",
@@ -500,7 +506,8 @@
     "risk_factor": "Target competition across deep Packers receiving group",
     "fp_pos_rank": "WR28",
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Tucker Kraft",
@@ -514,7 +521,8 @@
     "risk_factor": "Minor injury concern across best ball draft markets",
     "fp_pos_rank": "TE4",
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "A.J. Brown",
@@ -528,7 +536,8 @@
     "risk_factor": "Patriots overall offense projected for negative regression in scoring",
     "fp_pos_rank": "WR4",
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "TreVeyon Henderson",
@@ -542,7 +551,8 @@
     "risk_factor": "Played just 34% snaps with 145 carries and 26% route share compared to Stevenson",
     "fp_pos_rank": null,
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Jadarian Price",
@@ -556,7 +566,8 @@
     "risk_factor": "Charbonnet returning after Halloween and offense regression",
     "fp_pos_rank": null,
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Trevor Lawrence",
@@ -570,7 +581,8 @@
     "risk_factor": "Slow acclimation periods when adjusting to new playcallers",
     "fp_pos_rank": null,
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Bhayshul Tuten",
@@ -584,7 +596,8 @@
     "risk_factor": "Rookie pass protection adaptation",
     "fp_pos_rank": null,
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Jakobi Meyers",
@@ -598,7 +611,8 @@
     "risk_factor": "Limited upside beyond WR3 range in traditional redraft",
     "fp_pos_rank": "WR24",
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Omarion Hampton",
@@ -612,7 +626,8 @@
     "risk_factor": "Ankle injury setback during rookie season",
     "fp_pos_rank": "RB7",
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Jalen Hurts",
@@ -626,7 +641,8 @@
     "risk_factor": "Reliance on offensive line health and new offensive scheme implementation",
     "fp_pos_rank": null,
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "DeVonta Smith",
@@ -640,7 +656,8 @@
     "risk_factor": "Target compression when A.J. Brown is fully healthy",
     "fp_pos_rank": "WR1",
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Baker Mayfield",
@@ -654,7 +671,8 @@
     "risk_factor": "Has played through shoulder injury concerns in past seasons",
     "fp_pos_rank": "QB6",
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Emeka Egbuka",
@@ -668,7 +686,8 @@
     "risk_factor": "Low catchable target percentage during recent season",
     "fp_pos_rank": null,
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "RJ Harvey",
@@ -682,7 +701,8 @@
     "risk_factor": "Three-way backfield sharing touches with Dobbins and Coleman",
     "fp_pos_rank": "RB31",
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Bo Nix",
@@ -696,7 +716,8 @@
     "risk_factor": "Middling passing efficiency rankings",
     "fp_pos_rank": "QB9",
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Jonathan Taylor",
@@ -710,7 +731,8 @@
     "risk_factor": "Averages just 12.4 FPG in losses in regressing offense implied for -4 PPG",
     "fp_pos_rank": null,
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Tyler Shough",
@@ -724,7 +746,8 @@
     "risk_factor": "Saints overall team scoring ceiling",
     "fp_pos_rank": "QB11",
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Jayden Daniels",
@@ -738,7 +761,8 @@
     "risk_factor": "Weak defensive unit forcing unpredictable shootout game scripts",
     "fp_pos_rank": null,
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Terry McLaurin",
@@ -752,7 +776,8 @@
     "risk_factor": "Catchable target rate dipped to 74% last season",
     "fp_pos_rank": "WR16",
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Kyler Murray",
@@ -766,7 +791,8 @@
     "risk_factor": "Ranks QB36 in accurate throw rate and QB32 in CPOE on throws of 10+ yards",
     "fp_pos_rank": "QB36",
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Jaxson Dart",
@@ -780,7 +806,8 @@
     "risk_factor": "Dependence on supporting cast health and O-line protection",
     "fp_pos_rank": "QB6",
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Malik Nabers",
@@ -794,7 +821,8 @@
     "risk_factor": "Overall Giants offensive efficiency consistency",
     "fp_pos_rank": "WR6",
     "is_official_ranking": false,
-    "source_file": "Underdog strategy.pdf"
+    "source_file": "Underdog strategy.pdf",
+    "fp_overall_rank": null
   },
   {
     "player_name": "Cam Ward",
@@ -1189,7 +1217,7 @@
   {
     "player_name": "Ashton Jeanty",
     "position": "RB",
-    "team": "LV",
+    "team": "FA",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -1714,7 +1742,7 @@
   {
     "player_name": "Cam Skattebo",
     "position": "RB",
-    "team": "NYG",
+    "team": "FA",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -2209,7 +2237,7 @@
   {
     "player_name": "Makai Lemon",
     "position": "WR",
-    "team": "PHI",
+    "team": "FA",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
@@ -2509,7 +2537,7 @@
   {
     "player_name": "Jordyn Tyson",
     "position": "WR",
-    "team": "NO",
+    "team": "FA",
     "author": "FantasyPoints Staff",
     "stance": "Bullish",
     "target_round_advice": "",
