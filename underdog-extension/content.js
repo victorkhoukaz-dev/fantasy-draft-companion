@@ -288,7 +288,23 @@
       if (msg && msg.type === 'REQUEST_UNDERDOG_SYNC') {
         lastPicksCount = -1;
         tick();
+      } else if (msg && msg.type === 'RESET_DRAFT_STATE') {
+        lastPicksCount = -1;
       }
     });
+  }
+
+  if (typeof BroadcastChannel !== 'undefined') {
+    try {
+      const channel = new BroadcastChannel('underdog-sync');
+      channel.onmessage = (e) => {
+        if (e.data && e.data.type === 'REQUEST_UNDERDOG_SYNC') {
+          lastPicksCount = -1;
+          tick();
+        } else if (e.data && e.data.type === 'RESET_DRAFT_STATE') {
+          lastPicksCount = -1;
+        }
+      };
+    } catch(e) {}
   }
 })();

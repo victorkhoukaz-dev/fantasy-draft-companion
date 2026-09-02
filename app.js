@@ -1710,12 +1710,41 @@ document.addEventListener('DOMContentLoaded', () => {
       myRosterPlayers.clear();
       otherDraftedPlayers.clear();
       starredPlayers.clear();
-      localStorage.removeItem(getStorageKey('fp_my_roster'));
-      localStorage.removeItem(getStorageKey('fp_other_drafted'));
-      localStorage.removeItem(getStorageKey('fp_starred_players'));
+      manuallyRemovedFromRoster.clear();
+
+      // Clear all roster & player storage keys
+      localStorage.removeItem('fp_my_roster');
+      localStorage.removeItem('fp_my_roster_underdog');
+      localStorage.removeItem('fp_other_drafted');
+      localStorage.removeItem('fp_other_drafted_underdog');
+      localStorage.removeItem('fp_starred_players');
+      localStorage.removeItem('fp_starred_players_underdog');
+      localStorage.removeItem('fp_draft_id');
+      localStorage.removeItem('fp_draft_slot');
+      localStorage.removeItem('fp_ud_draft_slot');
+
+      // Fully disconnect Sleeper draft sync polling
+      disconnectDraftSync();
+
+      // Reset Underdog relay state
+      lastUnderdogDraftId = null;
+      myUdDraftSlot = null;
+      if (udDraftSlotSelect) udDraftSlotSelect.value = '';
+
+      // Broadcast reset event to extension and all open tabs
+      if (underdogChannel) {
+        try {
+          underdogChannel.postMessage({ type: 'RESET_DRAFT_STATE' });
+        } catch(e) {}
+      }
+      window.postMessage({ type: 'RESET_DRAFT_STATE' }, '*');
+
       renderPlayerBoard();
       updateHeaderCounts();
       renderRosterSidebarContent();
+
+      if (draftSyncLabel) draftSyncLabel.textContent = 'Sync Draft';
+      if (openDraftSyncBtn) openDraftSyncBtn.classList.remove('syncing');
     }
   });
 
@@ -1885,12 +1914,15 @@ document.addEventListener('DOMContentLoaded', () => {
         let hasNewPicks = (picks.length !== lastSyncedPicksCount);
         lastSyncedPicksCount = picks.length;
 
+        const freshUserKeys = new Set();
+        const freshOtherKeys = new Set();
+
         picks.forEach(pick => {
           const playerName = pick.metadata?.full_name || (pick.metadata?.first_name + ' ' + pick.metadata?.last_name) || '';
           const canonicalKey = getCanonicalNameKey(playerName);
           if (!canonicalKey) return;
 
-          // Register player in groupedPlayersMap if not present yet (ensures DEF, K, or rookies show up in My Roster)
+          // Register player in groupedPlayersMap if not present yet
           if (!groupedPlayersMap.has(canonicalKey)) {
             groupedPlayersMap.set(canonicalKey, {
               canonical_key: canonicalKey,
@@ -1911,22 +1943,24 @@ document.addEventListener('DOMContentLoaded', () => {
           const userMatch = (myDraftSlot !== null && myDraftSlot !== undefined && draftMetaObj?.draft_order && Number(draftMetaObj.draft_order[pick.picked_by]) === Number(myDraftSlot));
           const isMyPick = Boolean(slotMatch || userMatch);
 
-          if (isMyPick) {
-            if (!myRosterPlayers.has(canonicalKey)) {
-              myRosterPlayers.add(canonicalKey);
-              otherDraftedPlayers.delete(canonicalKey);
-              hasNewPicks = true;
-            }
+          if (isMyPick && !manuallyRemovedFromRoster.has(canonicalKey)) {
+            freshUserKeys.add(canonicalKey);
           } else {
-            if (!otherDraftedPlayers.has(canonicalKey)) {
-              otherDraftedPlayers.add(canonicalKey);
-              myRosterPlayers.delete(canonicalKey);
-              hasNewPicks = true;
-            }
+            freshOtherKeys.add(canonicalKey);
           }
         });
 
-        if (hasNewPicks) {
+        let hasChanged = (freshUserKeys.size !== myRosterPlayers.size || freshOtherKeys.size !== otherDraftedPlayers.size);
+        if (!hasChanged) {
+          for (const k of freshUserKeys) { if (!myRosterPlayers.has(k)) { hasChanged = true; break; } }
+          if (!hasChanged) {
+            for (const k of freshOtherKeys) { if (!otherDraftedPlayers.has(k)) { hasChanged = true; break; } }
+          }
+        }
+
+        if (hasChanged) {
+          myRosterPlayers = freshUserKeys;
+          otherDraftedPlayers = freshOtherKeys;
           localStorage.setItem('fp_my_roster', JSON.stringify(Array.from(myRosterPlayers)));
           localStorage.setItem('fp_other_drafted', JSON.stringify(Array.from(otherDraftedPlayers)));
           renderPlayerBoard();
@@ -3329,8 +3363,8 @@ document.addEventListener('DOMContentLoaded', () => {
   syncProviderModelOptions();
   initAiAdvisorControls();
 
-  // Auto-Resume Active Draft Connection on page load
-  if (activeDraftId) {
+  // Auto-Resume Active Draft Connection on page load (Redraft only)
+  if (currentPlatformMode === 'redraft' && activeDraftId) {
     connectToSleeperDraft(activeDraftId);
   }
 
