@@ -165,90 +165,83 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
 
   const KNOWN_USER_PICKS = new Map();
 
+  function isQueueOrAvailable(el) {{
+    let cur = el;
+    while (cur && cur !== document.body) {{
+      const cls = (typeof cur.className === 'string' ? cur.className : '').toLowerCase();
+      const id = (cur.id || '').toLowerCase();
+      const testId = (cur.getAttribute && cur.getAttribute('data-testid') || '').toLowerCase();
+      const aria = (cur.getAttribute && cur.getAttribute('aria-label') || '').toLowerCase();
+
+      if (
+        cls.includes('queue') || cls.includes('available') || cls.includes('playerlist') || 
+        cls.includes('player-list') || cls.includes('search') || cls.includes('rankings') ||
+        id.includes('queue') || id.includes('available') || id.includes('search') ||
+        testId.includes('queue') || testId.includes('available') || testId.includes('search') ||
+        aria.includes('queue') || aria.includes('available') || aria.includes('search')
+      ) {{
+        return true;
+      }}
+      cur = cur.parentElement;
+    }}
+    return false;
+  }}
+
   function parseDraftPicks() {{
     try {{
       const picks = [];
       const seenKeys = new Set();
       const myRosterKeys = new Set();
+      const winWidth = window.innerWidth || document.documentElement.clientWidth || 1920;
 
-      // =======================================================================
-      // MODE 1: DRAFT BOARD MODAL / GRID VIEW
-      // =======================================================================
-      const boardContainer = document.querySelector(
-        '[class*="DraftBoard"], [class*="draft-board"], [class*="styles__DraftBoard"], [data-testid*="draft-board"]'
-      );
+      // 1. Detect if Draft Board Modal is Open
+      const modalEl = document.querySelector('[role="dialog"], [class*="modal"], [class*="Modal"], [class*="dialog"], [class*="overlay"], [class*="Overlay"]');
+      const isBoardModalOpen = Boolean(modalEl && modalEl.textContent && (modalEl.textContent.includes('QB') || modalEl.textContent.includes('RB')) && modalEl.textContent.includes('WR'));
 
-      const boardColumns = boardContainer
-        ? boardContainer.querySelectorAll('[class*="Column"], [class*="column"], [class*="col"]')
-        : document.querySelectorAll('[class*="styles__Column"], [class*="DraftBoardColumn"]');
-
-      if (boardColumns && boardColumns.length >= 8) {{
+      if (isBoardModalOpen && modalEl) {{
         let userColIndex = -1;
-
-        // Check each column header for '(You)' or user highlight
-        boardColumns.forEach((col, idx) => {{
-          const colHead = col.querySelector('header, [class*="Header"], [class*="header"], [class*="user"], [class*="User"]') || col;
-          const headText = (colHead.textContent || '').toLowerCase();
-          const cls = (col.className || '').toLowerCase();
-          if (headText.includes('(you)') || cls.includes('user') || cls.includes('me') || cls.includes('active')) {{
+        const columns = modalEl.querySelectorAll('[class*="Column"], [class*="column"], [class*="col"], div[style*="flex-direction: column"]');
+        
+        columns.forEach((col, idx) => {{
+          const t = (col.textContent || '').toLowerCase();
+          if (t.includes('(you)') || col.className.toLowerCase().includes('user') || col.className.toLowerCase().includes('active')) {{
             userColIndex = idx;
           }}
         }});
 
-        // If not found by '(You)', test which column matches known user picks
-        if (userColIndex === -1 && KNOWN_USER_PICKS.size > 0) {{
-          let maxMatches = 0;
-          boardColumns.forEach((col, idx) => {{
-            let matchCount = 0;
-            const normColText = normalizeNoSuffix(col.textContent || '');
-            KNOWN_USER_PICKS.forEach((p, key) => {{
-              if (normColText.includes(key)) matchCount++;
-            }});
-            if (matchCount > maxMatches) {{
-              maxMatches = matchCount;
-              userColIndex = idx;
-            }}
-          }});
-        }}
+        const modalNodes = modalEl.querySelectorAll('p, span, div, li, tr, h1, h2, h3, h4, h5, h6, a');
+        modalNodes.forEach(el => {{
+          if (el.children.length > 4) return;
+          const text = (el.textContent || '').trim();
+          if (!text || text.length < 3 || text.length > 90) return;
+          if (text.includes('QB') && text.includes('RB') && text.includes('WR') && text.includes('TE')) return;
 
-        // Iterate through all 12 columns and extract each drafted pick card
-        boardColumns.forEach((col, colIdx) => {{
-          const isUserCol = (userColIndex !== -1 && colIdx === userColIndex);
-          const colCards = col.querySelectorAll(
-            '[class*="Cell"], [class*="cell"], [class*="Card"], [class*="card"], [class*="Pick"], [class*="pick"], [class*="Tile"], [class*="tile"], [class*="Slot"], [class*="slot"]'
-          );
+          const normText = normalize(text);
+          const normNoSuffix = normalizeNoSuffix(text);
+          const rawUpper = text.toUpperCase();
+          const matched = matchPlayerInText(normText, normNoSuffix, rawUpper);
 
-          colCards.forEach(card => {{
-            const text = (card.textContent || '').trim();
-            if (!text || text.length < 3 || text.length > 120) return;
-            // Skip column header (QB/RB/WR/TE counts)
-            if (text.includes('QB') && text.includes('RB') && text.includes('WR') && text.includes('TE')) return;
-
-            const normText = normalize(text);
-            const normNoSuffix = normalizeNoSuffix(text);
-            const rawUpper = text.toUpperCase();
-            const matched = matchPlayerInText(normText, normNoSuffix, rawUpper);
-
-            if (matched) {{
-              const key = normalize(matched.name);
-              if (!seenKeys.has(key)) {{
-                seenKeys.add(key);
-                const isUser = isUserCol || myRosterKeys.has(key) || KNOWN_USER_PICKS.has(key);
-                const pickObj = {{
-                  player_name: matched.name,
-                  position: matched.pos,
-                  team: matched.team,
-                  is_user: isUser,
-                  slot: colIdx + 1
-                }};
-                if (isUser) {{
-                  myRosterKeys.add(key);
-                  KNOWN_USER_PICKS.set(key, pickObj);
-                }}
-                picks.push(pickObj);
+          if (matched) {{
+            const key = normalize(matched.name);
+            if (!seenKeys.has(key)) {{
+              seenKeys.add(key);
+              let isUser = knownUserPicksMap.has(key);
+              if (!isUser && userColIndex !== -1 && columns[userColIndex] && columns[userColIndex].contains(el)) {{
+                isUser = true;
               }}
+              const pickObj = {{
+                player_name: matched.name,
+                position: matched.pos,
+                team: matched.team,
+                is_user: isUser
+              }};
+              if (isUser) {{
+                myRosterKeys.add(key);
+                knownUserPicksMap.set(key, pickObj);
+              }}
+              picks.push(pickObj);
             }}
-          }});
+          }}
         }});
 
         if (picks.length > 0) {{
@@ -256,27 +249,24 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
         }}
       }}
 
-      // =======================================================================
-      // MODE 2: MAIN DRAFT ROOM VIEW (Board Closed)
-      // =======================================================================
+      // 2. Main Draft Room View (Board Modal Closed)
 
-      // 1. Scan User Roster Sidebar strictly (exclude Queue)
-      const allRosterEls = document.querySelectorAll(
-        '[class*="Roster"], [class*="roster"], [data-testid*="roster"], [aria-label*="Roster"]'
-      );
+      // Step A: Scan User Roster Sidebar (strictly right side, exclude Queue & ADP cards)
+      const allTextNodes = document.querySelectorAll('p, span, div, li, tr, h1, h2, h3, h4, h5, h6, a');
 
-      allRosterEls.forEach(container => {{
-        const cls = (container.className || '').toLowerCase();
-        const testId = (container.getAttribute('data-testid') || '').toLowerCase();
-        // Exclude queue or available containers
-        if (cls.includes('queue') || cls.includes('available') || cls.includes('playerlist') || testId.includes('queue')) return;
+      allTextNodes.forEach(el => {{
+        if (el.children.length > 3) return;
+        if (isQueueOrAvailable(el)) return;
 
-        const allNodes = container.querySelectorAll('p, span, div, li, tr, h1, h2, h3, h4, h5, h6, a');
-        allNodes.forEach(el => {{
-          if (el.children.length > 3) return;
-          const text = (el.textContent || '').trim();
-          if (!text || text.length < 3 || text.length > 70) return;
+        const text = (el.textContent || '').trim();
+        if (!text || text.length < 3 || text.length > 70) return;
+        const lowerText = text.toLowerCase();
+        if (lowerText.includes('adp') || lowerText.includes('queue') || lowerText.includes('add to queue')) return;
 
+        let rect = null;
+        try {{ rect = el.getBoundingClientRect(); }} catch(e) {{}}
+
+        if (rect && rect.left > (winWidth * 0.55) && rect.top > 80) {{
           const normText = normalize(text);
           const normNoSuffix = normalizeNoSuffix(text);
           const rawUpper = text.toUpperCase();
@@ -293,22 +283,26 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
                 team: matched.team,
                 is_user: true
               }};
-              KNOWN_USER_PICKS.set(key, pickObj);
+              knownUserPicksMap.set(key, pickObj);
               picks.push(pickObj);
             }}
           }}
-        }});
+        }}
       }});
 
-      // 2. Scan Top Completed Picks Ticker / Carousel only (NEVER scan available players or queue)
-      const tickerElements = document.querySelectorAll(
-        'header [class*="ticker"] div, header [class*="Ticker"] div, nav [class*="ticker"] div, nav [class*="Ticker"] div, [class*="carousel"] div, [class*="Carousel"] div, [class*="completed-picks"] div, [class*="recent-picks"] div, [data-testid*="ticker"] div, [data-testid*="recent-pick"]'
+      // Step B: Scan Completed Picks from Board/Ticker/Carousel
+      const candidateElements = document.querySelectorAll(
+        'header div, nav div, [class*="ticker"] div, [class*="Ticker"] div, [class*="carousel"] div, [class*="Carousel"] div, [class*="completed"] div, [class*="recent"] div, [class*="board"] div, [class*="Board"] div, [class*="grid"] div, [class*="Grid"] div, [class*="cell"] div, [class*="Cell"] div, [class*="slot"] div, [class*="Slot"] div, [data-testid*="pick"], [data-testid*="cell"], [data-testid*="ticker"], [data-testid*="recent"]'
       );
 
-      tickerElements.forEach(el => {{
+      candidateElements.forEach(el => {{
+        if (isQueueOrAvailable(el)) return;
         if (el.children.length > 4) return;
+
         const text = (el.textContent || '').trim();
-        if (!text || text.length < 3 || text.length > 80) return;
+        if (!text || text.length < 3 || text.length > 90) return;
+        const lowerText = text.toLowerCase();
+        if (lowerText.includes('adp') || lowerText.includes('add to queue')) return;
 
         const normText = normalize(text);
         const normNoSuffix = normalizeNoSuffix(text);
@@ -319,7 +313,7 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
           const key = normalize(matched.name);
           if (!seenKeys.has(key)) {{
             seenKeys.add(key);
-            const isUser = myRosterKeys.has(key) || KNOWN_USER_PICKS.has(key);
+            const isUser = myRosterKeys.has(key) || knownUserPicksMap.has(key);
             picks.push({{
               player_name: matched.name,
               position: matched.pos,
