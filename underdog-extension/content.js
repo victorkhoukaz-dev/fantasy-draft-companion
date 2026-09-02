@@ -54,48 +54,6 @@
       .replace(/[^a-z0-9]/g, '');
   }
 
-  function isInsideAvailableQueue(el) {
-    let cur = el;
-    while (cur && cur !== document.body) {
-      const cls = (typeof cur.className === 'string' ? cur.className : '').toLowerCase();
-      const id = (cur.id || '').toLowerCase();
-      const testId = (cur.getAttribute && cur.getAttribute('data-testid') || '').toLowerCase();
-      const aria = (cur.getAttribute && cur.getAttribute('aria-label') || '').toLowerCase();
-      
-      // If inside draft board, ticker, pick cell, or roster sidebar: NEVER exclude!
-      if (
-        cls.includes('draftboard') || cls.includes('draft-board') || cls.includes('board') ||
-        cls.includes('matrix') || cls.includes('grid') || cls.includes('ticker') ||
-        cls.includes('pickslot') || cls.includes('pick-slot') || cls.includes('cell') ||
-        cls.includes('slot') || cls.includes('roster') ||
-        testId.includes('draft-board') || testId.includes('board') || testId.includes('pick') ||
-        testId.includes('cell') || testId.includes('ticker')
-      ) {
-        return false;
-      }
-
-      // Check for user roster sidebar position
-      let rect = null;
-      try { rect = cur.getBoundingClientRect(); } catch(e) {}
-      const winWidth = window.innerWidth || 1920;
-      if (rect && rect.left > (winWidth * 0.55)) {
-        return false;
-      }
-
-      // Strictly match available player table/queue
-      if (
-        cls.includes('availableplayers') || cls.includes('available-players') || 
-        cls.includes('playerlist') || cls.includes('player-list') ||
-        testId.includes('available-players') || testId.includes('player-list') ||
-        id.includes('available-players') || id.includes('player-list')
-      ) {
-        return true;
-      }
-      cur = cur.parentElement;
-    }
-    return false;
-  }
-
   function matchPlayerInText(normText, normNoSuffix, rawUpperText) {
     for (let i = 0; i < KNOWN_PLAYERS.length; i++) {
       const kp = KNOWN_PLAYERS[i];
@@ -144,59 +102,152 @@
     return null;
   }
 
+  const KNOWN_USER_PICKS = new Map();
+
   function parseDraftPicks() {
     try {
       const picks = [];
       const seenKeys = new Set();
       const myRosterKeys = new Set();
 
-      const winWidth = window.innerWidth || document.documentElement.clientWidth || 1920;
+      // =======================================================================
+      // MODE 1: DRAFT BOARD MODAL / GRID VIEW
+      // =======================================================================
+      const boardContainer = document.querySelector(
+        '[class*="DraftBoard"], [class*="draft-board"], [class*="styles__DraftBoard"], [data-testid*="draft-board"]'
+      );
 
-      // 1. Scan Right Roster Panel for User Picks (100% User Roster)
-      const allTextNodes = document.querySelectorAll('p, span, div, li, tr, h1, h2, h3, h4, h5, h6, a');
+      const boardColumns = boardContainer
+        ? boardContainer.querySelectorAll('[class*="Column"], [class*="column"], [class*="col"]')
+        : document.querySelectorAll('[class*="styles__Column"], [class*="DraftBoardColumn"]');
 
-      allTextNodes.forEach(el => {
-        if (el.children.length > 3) return;
+      if (boardColumns && boardColumns.length >= 8) {
+        let userColIndex = -1;
 
-        const text = (el.textContent || '').trim();
-        if (!text || text.length < 3 || text.length > 70) return;
+        // Check each column header for '(You)' or user highlight
+        boardColumns.forEach((col, idx) => {
+          const colHead = col.querySelector('header, [class*="Header"], [class*="header"], [class*="user"], [class*="User"]') || col;
+          const headText = (colHead.textContent || '').toLowerCase();
+          const cls = (col.className || '').toLowerCase();
+          if (headText.includes('(you)') || cls.includes('user') || cls.includes('me') || cls.includes('active')) {
+            userColIndex = idx;
+          }
+        });
 
-        const normText = normalize(text);
-        const normNoSuffix = normalizeNoSuffix(text);
-        const rawUpper = text.toUpperCase();
-        const matched = matchPlayerInText(normText, normNoSuffix, rawUpper);
+        // If not found by '(You)', test which column matches known user picks
+        if (userColIndex === -1 && KNOWN_USER_PICKS.size > 0) {
+          let maxMatches = 0;
+          boardColumns.forEach((col, idx) => {
+            let matchCount = 0;
+            const normColText = normalizeNoSuffix(col.textContent || '');
+            KNOWN_USER_PICKS.forEach((p, key) => {
+              if (normColText.includes(key)) matchCount++;
+            });
+            if (matchCount > maxMatches) {
+              maxMatches = matchCount;
+              userColIndex = idx;
+            }
+          });
+        }
 
-        if (matched) {
-          const key = normalize(matched.name);
-          let rect = null;
-          try { rect = el.getBoundingClientRect(); } catch(e) {}
+        // Iterate through all 12 columns and extract each drafted pick card
+        boardColumns.forEach((col, colIdx) => {
+          const isUserCol = (userColIndex !== -1 && colIdx === userColIndex);
+          const colCards = col.querySelectorAll(
+            '[class*="Cell"], [class*="cell"], [class*="Card"], [class*="card"], [class*="Pick"], [class*="pick"], [class*="Tile"], [class*="tile"], [class*="Slot"], [class*="slot"]'
+          );
 
-          // If located in right third of screen (Roster sidebar)
-          if (rect && rect.left > (winWidth * 0.55) && rect.top > 80) {
+          colCards.forEach(card => {
+            const text = (card.textContent || '').trim();
+            if (!text || text.length < 3 || text.length > 120) return;
+            // Skip column header (QB/RB/WR/TE counts)
+            if (text.includes('QB') && text.includes('RB') && text.includes('WR') && text.includes('TE')) return;
+
+            const normText = normalize(text);
+            const normNoSuffix = normalizeNoSuffix(text);
+            const rawUpper = text.toUpperCase();
+            const matched = matchPlayerInText(normText, normNoSuffix, rawUpper);
+
+            if (matched) {
+              const key = normalize(matched.name);
+              if (!seenKeys.has(key)) {
+                seenKeys.add(key);
+                const isUser = isUserCol || myRosterKeys.has(key) || KNOWN_USER_PICKS.has(key);
+                const pickObj = {
+                  player_name: matched.name,
+                  position: matched.pos,
+                  team: matched.team,
+                  is_user: isUser,
+                  slot: colIdx + 1
+                };
+                if (isUser) {
+                  myRosterKeys.add(key);
+                  KNOWN_USER_PICKS.set(key, pickObj);
+                }
+                picks.push(pickObj);
+              }
+            }
+          });
+        });
+
+        if (picks.length > 0) {
+          return picks;
+        }
+      }
+
+      // =======================================================================
+      // MODE 2: MAIN DRAFT ROOM VIEW (Board Closed)
+      // =======================================================================
+
+      // 1. Scan User Roster Sidebar strictly (exclude Queue)
+      const allRosterEls = document.querySelectorAll(
+        '[class*="Roster"], [class*="roster"], [data-testid*="roster"], [aria-label*="Roster"]'
+      );
+
+      allRosterEls.forEach(container => {
+        const cls = (container.className || '').toLowerCase();
+        const testId = (container.getAttribute('data-testid') || '').toLowerCase();
+        // Exclude queue or available containers
+        if (cls.includes('queue') || cls.includes('available') || cls.includes('playerlist') || testId.includes('queue')) return;
+
+        const allNodes = container.querySelectorAll('p, span, div, li, tr, h1, h2, h3, h4, h5, h6, a');
+        allNodes.forEach(el => {
+          if (el.children.length > 3) return;
+          const text = (el.textContent || '').trim();
+          if (!text || text.length < 3 || text.length > 70) return;
+
+          const normText = normalize(text);
+          const normNoSuffix = normalizeNoSuffix(text);
+          const rawUpper = text.toUpperCase();
+          const matched = matchPlayerInText(normText, normNoSuffix, rawUpper);
+
+          if (matched) {
+            const key = normalize(matched.name);
             if (!myRosterKeys.has(key)) {
               myRosterKeys.add(key);
               seenKeys.add(key);
-              picks.push({
+              const pickObj = {
                 player_name: matched.name,
                 position: matched.pos,
                 team: matched.team,
                 is_user: true
-              });
+              };
+              KNOWN_USER_PICKS.set(key, pickObj);
+              picks.push(pickObj);
             }
           }
-        }
+        });
       });
 
-      // 2. Scan Top Ticker, Header Carousel, Board Grid, and Completed Picks
-      const candidateElements = document.querySelectorAll(
-        '[class*="board"] div, [class*="Board"] div, [class*="grid"] div, [class*="Grid"] div, [class*="column"] div, [class*="Column"] div, [class*="cell"] div, [class*="Cell"] div, [class*="slot"] div, [class*="Slot"] div, [class*="card"], [class*="Card"], [class*="tile"], [class*="Tile"], [class*="pick"], [class*="Pick"], [class*="ticker"] div, [class*="Ticker"] div, [class*="carousel"] div, [class*="Carousel"] div, [data-testid*="pick"], [data-testid*="cell"], header div, nav div'
+      // 2. Scan Top Completed Picks Ticker / Carousel only (NEVER scan available players or queue)
+      const tickerElements = document.querySelectorAll(
+        'header [class*="ticker"] div, header [class*="Ticker"] div, nav [class*="ticker"] div, nav [class*="Ticker"] div, [class*="carousel"] div, [class*="Carousel"] div, [class*="completed-picks"] div, [class*="recent-picks"] div, [data-testid*="ticker"] div, [data-testid*="recent-pick"]'
       );
 
-      candidateElements.forEach(el => {
-        if (isInsideAvailableQueue(el)) return;
-
+      tickerElements.forEach(el => {
+        if (el.children.length > 4) return;
         const text = (el.textContent || '').trim();
-        if (!text || text.length < 3 || text.length > 120) return;
+        if (!text || text.length < 3 || text.length > 80) return;
 
         const normText = normalize(text);
         const normNoSuffix = normalizeNoSuffix(text);
@@ -207,11 +258,12 @@
           const key = normalize(matched.name);
           if (!seenKeys.has(key)) {
             seenKeys.add(key);
+            const isUser = myRosterKeys.has(key) || KNOWN_USER_PICKS.has(key);
             picks.push({
               player_name: matched.name,
               position: matched.pos,
               team: matched.team,
-              is_user: myRosterKeys.has(key)
+              is_user: isUser
             });
           }
         }
