@@ -415,8 +415,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // Helper: Normalize name
   function getCanonicalNameKey(name) {
     if (!name) return '';
-    let rawKey = name.toLowerCase()
-      .replace(/ jr\.?| sr\.?| iii| ii| iv/gi, '')
+    let str = String(name).trim();
+    if (str.includes(',')) {
+      const parts = str.split(',');
+      if (parts.length === 2) {
+        str = parts[1].trim() + ' ' + parts[0].trim();
+      }
+    }
+    let rawKey = str.toLowerCase()
+      .replace(/\b(jr|sr|iii|ii|iv|v)\b\.?/gi, '')
       .replace(/[^a-z]/g, '');
     return NAME_ALIASES[rawKey] || rawKey;
   }
@@ -2061,9 +2068,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleIncomingUnderdogPicks(data) {
     isUnderdogRelayConnected = true;
     const picks = data.picks;
-    if (!picks || picks.length === 0) return;
-
-    let hasNewPicks = false;
+    if (!picks || !Array.isArray(picks) || picks.length === 0) return;
 
     // If new draft room detected, clear old draft state automatically
     if (data.draft_id && lastUnderdogDraftId && data.draft_id !== lastUnderdogDraftId) {
@@ -2071,7 +2076,6 @@ document.addEventListener('DOMContentLoaded', () => {
       myRosterPlayers.clear();
       otherDraftedPlayers.clear();
       manuallyRemovedFromRoster.clear();
-      hasNewPicks = true;
     }
     if (data.draft_id) lastUnderdogDraftId = data.draft_id;
 
@@ -2082,6 +2086,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const effectiveSlot = myUdDraftSlot || data.user_slot;
+
+    // Build fresh, authoritative roster and drafted sets from active Underdog payload
+    const freshUserKeys = new Set();
+    const freshOtherKeys = new Set();
 
     picks.forEach(p => {
       const canonicalKey = getCanonicalNameKey(p.player_name);
@@ -2106,25 +2114,30 @@ document.addEventListener('DOMContentLoaded', () => {
       const isUser = Boolean(p.is_user) || Boolean(effectiveSlot && p.slot && p.slot === effectiveSlot);
 
       if (isUser && !manuallyRemovedFromRoster.has(canonicalKey)) {
-        if (!myRosterPlayers.has(canonicalKey)) {
-          myRosterPlayers.add(canonicalKey);
-          otherDraftedPlayers.delete(canonicalKey);
-          hasNewPicks = true;
-        }
+        freshUserKeys.add(canonicalKey);
       } else {
-        // Mark as other drafted (only if not already on MY roster)
-        if (!myRosterPlayers.has(canonicalKey)) {
-          if (!otherDraftedPlayers.has(canonicalKey)) {
-            otherDraftedPlayers.add(canonicalKey);
-            hasNewPicks = true;
-          }
-        }
+        freshOtherKeys.add(canonicalKey);
       }
     });
 
-    if (hasNewPicks) {
-      localStorage.setItem('fp_my_roster_underdog', JSON.stringify(Array.from(myRosterPlayers)));
-      localStorage.setItem('fp_other_drafted_underdog', JSON.stringify(Array.from(otherDraftedPlayers)));
+    // Check if the board or roster changed
+    let hasChanged = (freshUserKeys.size !== myRosterPlayers.size || freshOtherKeys.size !== otherDraftedPlayers.size);
+    if (!hasChanged) {
+      for (const k of freshUserKeys) {
+        if (!myRosterPlayers.has(k)) { hasChanged = true; break; }
+      }
+      if (!hasChanged) {
+        for (const k of freshOtherKeys) {
+          if (!otherDraftedPlayers.has(k)) { hasChanged = true; break; }
+        }
+      }
+    }
+
+    if (hasChanged) {
+      myRosterPlayers = freshUserKeys;
+      otherDraftedPlayers = freshOtherKeys;
+      localStorage.setItem(getStorageKey('fp_my_roster'), JSON.stringify(Array.from(myRosterPlayers)));
+      localStorage.setItem(getStorageKey('fp_other_drafted'), JSON.stringify(Array.from(otherDraftedPlayers)));
       renderPlayerBoard();
     }
 
@@ -2133,7 +2146,7 @@ document.addEventListener('DOMContentLoaded', () => {
       openDraftSyncBtn.classList.add('syncing');
       if (draftSyncIcon) draftSyncIcon.textContent = '🐶';
       const slotStr = effectiveSlot ? ` (Slot ${effectiveSlot})` : '';
-      draftSyncLabel.textContent = `UD Live: #${picks.length}${slotStr}`;
+      draftSyncLabel.textContent = `UD Live: #${picks.length} (${freshUserKeys.size} mine)${slotStr}`;
     }
   }
 

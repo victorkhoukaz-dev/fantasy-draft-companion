@@ -11,33 +11,45 @@ players_dict = adp_data.get('players', {})
 def normalize(str_val):
     return re.sub(r'[^a-z0-9]', '', (str_val or '').lower())
 
+def normalize_no_suffix(str_val):
+    cleaned = re.sub(r'(?i)\b(jr|sr|iii|ii|iv|v)\b\.?', '', str(str_val or ''))
+    return re.sub(r'[^a-z0-9]', '', cleaned.lower())
+
 # Check short name collisions
 short_counts = {}
 for p in players_dict.values():
     full_name = p['full_name']
     parts = full_name.split()
     short = f"{parts[0][0]}. {' '.join(parts[1:])}" if len(parts) > 1 else full_name
-    norm_short = normalize(short)
+    norm_short = normalize_no_suffix(short)
     short_counts[norm_short] = short_counts.get(norm_short, 0) + 1
 
 player_list = []
 for p in players_dict.values():
     full_name = p['full_name']
-    no_suffix = re.sub(r'(?i)\b(jr\.?|sr\.?|iii|ii|iv)\b', '', full_name).strip()
+    no_suffix = re.sub(r'(?i)\b(jr|sr|iii|ii|iv|v)\b\.?', '', full_name).strip()
     
     parts = full_name.split()
-    short_name = f"{parts[0][0]}. {' '.join(parts[1:])}" if len(parts) > 1 else full_name
-    short_no_suffix = f"{parts[0][0]}. {' '.join(no_suffix.split()[1:])}" if len(no_suffix.split()) > 1 else short_name
+    parts_no_suffix = no_suffix.split()
     
-    norm_short = normalize(short_name)
+    short_name = f"{parts[0][0]}. {' '.join(parts[1:])}" if len(parts) > 1 else full_name
+    short_no_suffix = f"{parts[0][0]}. {' '.join(parts_no_suffix[1:])}" if len(parts_no_suffix) > 1 else short_name
+    
+    last_first = f"{parts_no_suffix[-1]} {' '.join(parts_no_suffix[:-1])}" if len(parts_no_suffix) > 1 else no_suffix
+    last_first_short = f"{parts_no_suffix[-1]} {parts[0][0]}" if len(parts_no_suffix) > 1 else no_suffix
+
+    norm_short = normalize_no_suffix(short_name)
     is_ambiguous = short_counts.get(norm_short, 0) > 1
 
     player_list.append({
         'name': full_name,
         'clean': normalize(full_name),
         'no_suffix': normalize(no_suffix),
+        'inverted': normalize(last_first),
+        'inverted_short': normalize(last_first_short),
         'short': norm_short,
         'short_no_suffix': normalize(short_no_suffix),
+        'last_name': normalize(parts_no_suffix[-1]) if len(parts_no_suffix) > 0 else normalize(no_suffix),
         'is_ambiguous': is_ambiguous,
         'pos': p.get('position', 'FLEX').upper(),
         'team': p.get('team', 'NFL').upper()
@@ -97,6 +109,12 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   }}
 
+  function normalizeNoSuffix(str) {{
+    return (str || '').toLowerCase()
+      .replace(/\\b(jr|sr|iii|ii|iv|v)\\b\\.?/gi, '')
+      .replace(/[^a-z0-9]/g, '');
+  }}
+
   function isInsideAvailableQueue(el) {{
     let cur = el;
     while (cur && cur !== document.body) {{
@@ -105,7 +123,19 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
       const testId = (cur.getAttribute && cur.getAttribute('data-testid') || '').toLowerCase();
       const aria = (cur.getAttribute && cur.getAttribute('aria-label') || '').toLowerCase();
       
-      // Do NOT filter out roster panel even if it has some generic classes
+      // If inside draft board, ticker, pick cell, or roster sidebar: NEVER exclude!
+      if (
+        cls.includes('draftboard') || cls.includes('draft-board') || cls.includes('board') ||
+        cls.includes('matrix') || cls.includes('grid') || cls.includes('ticker') ||
+        cls.includes('pickslot') || cls.includes('pick-slot') || cls.includes('cell') ||
+        cls.includes('slot') || cls.includes('roster') ||
+        testId.includes('draft-board') || testId.includes('board') || testId.includes('pick') ||
+        testId.includes('cell') || testId.includes('ticker')
+      ) {{
+        return false;
+      }}
+
+      // Check for user roster sidebar position
       let rect = null;
       try {{ rect = cur.getBoundingClientRect(); }} catch(e) {{}}
       const winWidth = window.innerWidth || 1920;
@@ -113,15 +143,12 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
         return false;
       }}
 
+      // Strictly match available player table/queue
       if (
-        cls.includes('playerlist') || cls.includes('player-list') || 
-        cls.includes('available') || cls.includes('rankings') || cls.includes('ranking') ||
-        cls.includes('search') || cls.includes('queue') ||
-        id.includes('player-list') || id.includes('playerlist') ||
-        id.includes('available') || id.includes('search') || id.includes('queue') ||
-        testId.includes('player-list') || testId.includes('playerlist') ||
-        testId.includes('available') || testId.includes('search') || testId.includes('queue') ||
-        aria.includes('available') || aria.includes('search') || aria.includes('queue')
+        cls.includes('availableplayers') || cls.includes('available-players') || 
+        cls.includes('playerlist') || cls.includes('player-list') ||
+        testId.includes('available-players') || testId.includes('player-list') ||
+        id.includes('available-players') || id.includes('player-list')
       ) {{
         return true;
       }}
@@ -130,28 +157,47 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
     return false;
   }}
 
-  function matchPlayerInText(normText, rawUpperText) {{
+  function matchPlayerInText(normText, normNoSuffix, rawUpperText) {{
     for (let i = 0; i < KNOWN_PLAYERS.length; i++) {{
       const kp = KNOWN_PLAYERS[i];
       
-      // 1. Exact Full Name Match (e.g. "christianmccaffrey", "chrisolave", "zayflowers")
-      if (normText.includes(kp.clean)) {{
+      // 1. Exact Full Name Match (e.g. "lutherburdeniii", "brianthomasjr", "marvinharrisonjr")
+      if (normText.includes(kp.clean) || normNoSuffix.includes(kp.clean)) {{
         return kp;
       }}
       
-      // 2. Name without Suffix Match (e.g. "brianthomas", "tyronetracy", "marvinharrison")
-      if (kp.no_suffix.length > 5 && normText.includes(kp.no_suffix)) {{
+      // 2. Name without Suffix Match (e.g. "lutherburden", "brianthomas", "marvinharrison")
+      if (kp.no_suffix.length >= 5 && (normText.includes(kp.no_suffix) || normNoSuffix.includes(kp.no_suffix))) {{
         return kp;
       }}
 
-      // 3. Unambiguous Short Initial Match (e.g. "c. mccaffrey", "c. olave", "z. flowers")
-      if (!kp.is_ambiguous && kp.short.length > 4 && normText.includes(kp.short)) {{
+      // 3. Inverted Name Match ("burdenluther", "thomasbrian", "harrisonmarvin")
+      if (kp.inverted.length >= 5 && (normText.includes(kp.inverted) || normNoSuffix.includes(kp.inverted))) {{
         return kp;
       }}
 
-      // 4. Ambiguous Short Initial Match WITH Team or Position Verification
-      if (kp.is_ambiguous && (normText.includes(kp.short) || normText.includes(kp.short_no_suffix))) {{
+      // 4. Inverted Short Match ("burdenl", "thomasb", "harrisonm") with team or pos
+      if (kp.inverted_short.length >= 4 && (normText.includes(kp.inverted_short) || normNoSuffix.includes(kp.inverted_short))) {{
         if (rawUpperText.includes(kp.team) || rawUpperText.includes(kp.pos)) {{
+          return kp;
+        }}
+      }}
+
+      // 5. Unambiguous Short Initial Match (e.g. "lburden", "bthomas", "mharrison")
+      if (!kp.is_ambiguous && kp.short_no_suffix.length >= 4 && (normText.includes(kp.short_no_suffix) || normNoSuffix.includes(kp.short_no_suffix))) {{
+        return kp;
+      }}
+
+      // 6. Ambiguous Short Initial Match WITH Team or Position Verification
+      if (kp.is_ambiguous && (normNoSuffix.includes(kp.short) || normNoSuffix.includes(kp.short_no_suffix))) {{
+        if (rawUpperText.includes(kp.team) || rawUpperText.includes(kp.pos)) {{
+          return kp;
+        }}
+      }}
+
+      // 7. Last Name Match (>= 5 chars) WITH explicit Team AND Position (e.g. "BURDEN WR CHI", "THOMAS WR JAX", "SKATTEBO RB NYG")
+      if (kp.last_name.length >= 5 && (normText.includes(kp.last_name) || normNoSuffix.includes(kp.last_name))) {{
+        if (rawUpperText.includes(kp.team) && rawUpperText.includes(kp.pos)) {{
           return kp;
         }}
       }}
@@ -177,8 +223,9 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
         if (!text || text.length < 3 || text.length > 70) return;
 
         const normText = normalize(text);
+        const normNoSuffix = normalizeNoSuffix(text);
         const rawUpper = text.toUpperCase();
-        const matched = matchPlayerInText(normText, rawUpper);
+        const matched = matchPlayerInText(normText, normNoSuffix, rawUpper);
 
         if (matched) {{
           const key = normalize(matched.name);
@@ -203,19 +250,19 @@ content_js_template = f"""// FantasyPoints Underdog Live Draft Relay
 
       // 2. Scan Top Ticker, Header Carousel, Board Grid, and Completed Picks
       const candidateElements = document.querySelectorAll(
-        'header div, nav div, [class*="ticker"] div, [class*="Ticker"] div, [class*="carousel"] div, [class*="Carousel"] div, [class*="board"] div, [class*="Board"] div, [class*="grid"] div, [class*="Grid"] div, [class*="column"] div, [class*="Column"] div, [class*="card"], [class*="Card"], [class*="tile"], [class*="Tile"], [class*="pick"], [class*="Pick"], [data-testid*="pick"], [data-testid*="cell"]'
+        '[class*="board"] div, [class*="Board"] div, [class*="grid"] div, [class*="Grid"] div, [class*="column"] div, [class*="Column"] div, [class*="cell"] div, [class*="Cell"] div, [class*="slot"] div, [class*="Slot"] div, [class*="card"], [class*="Card"], [class*="tile"], [class*="Tile"], [class*="pick"], [class*="Pick"], [class*="ticker"] div, [class*="Ticker"] div, [class*="carousel"] div, [class*="Carousel"] div, [data-testid*="pick"], [data-testid*="cell"], header div, nav div'
       );
 
       candidateElements.forEach(el => {{
         if (isInsideAvailableQueue(el)) return;
-        if (el.children.length > 5) return;
 
         const text = (el.textContent || '').trim();
-        if (!text || text.length < 3 || text.length > 90) return;
+        if (!text || text.length < 3 || text.length > 120) return;
 
         const normText = normalize(text);
+        const normNoSuffix = normalizeNoSuffix(text);
         const rawUpper = text.toUpperCase();
-        const matched = matchPlayerInText(normText, rawUpper);
+        const matched = matchPlayerInText(normText, normNoSuffix, rawUpper);
 
         if (matched) {{
           const key = normalize(matched.name);
