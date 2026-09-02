@@ -104,28 +104,6 @@
 
   const KNOWN_USER_PICKS = new Map();
 
-  function isQueueOrAvailable(el) {
-    let cur = el;
-    while (cur && cur !== document.body) {
-      const cls = (typeof cur.className === 'string' ? cur.className : '').toLowerCase();
-      const id = (cur.id || '').toLowerCase();
-      const testId = (cur.getAttribute && cur.getAttribute('data-testid') || '').toLowerCase();
-      const aria = (cur.getAttribute && cur.getAttribute('aria-label') || '').toLowerCase();
-
-      if (
-        cls.includes('queue') || cls.includes('available') || cls.includes('playerlist') || 
-        cls.includes('player-list') || cls.includes('search') || cls.includes('rankings') ||
-        id.includes('queue') || id.includes('available') || id.includes('search') ||
-        testId.includes('queue') || testId.includes('available') || testId.includes('search') ||
-        aria.includes('queue') || aria.includes('available') || aria.includes('search')
-      ) {
-        return true;
-      }
-      cur = cur.parentElement;
-    }
-    return false;
-  }
-
   function parseDraftPicks() {
     try {
       const picks = [];
@@ -133,9 +111,11 @@
       const myRosterKeys = new Set();
       const winWidth = window.innerWidth || document.documentElement.clientWidth || 1920;
 
-      // 1. Detect if Draft Board Modal is Open
+      // =========================================================================
+      // 1. DRAFT BOARD MODAL PARSER (When full draft board is open)
+      // =========================================================================
       const modalEl = document.querySelector('[role="dialog"], [class*="modal"], [class*="Modal"], [class*="dialog"], [class*="overlay"], [class*="Overlay"]');
-      const isBoardModalOpen = Boolean(modalEl && modalEl.textContent && (modalEl.textContent.includes('QB') || modalEl.textContent.includes('RB')) && modalEl.textContent.includes('WR'));
+      const isBoardModalOpen = Boolean(modalEl && modalEl.textContent && modalEl.textContent.length > 50 && (modalEl.textContent.includes('QB') || modalEl.textContent.includes('RB')) && modalEl.textContent.includes('WR'));
 
       if (isBoardModalOpen && modalEl) {
         let userColIndex = -1;
@@ -164,7 +144,7 @@
             const key = normalize(matched.name);
             if (!seenKeys.has(key)) {
               seenKeys.add(key);
-              let isUser = knownUserPicksMap.has(key);
+              let isUser = KNOWN_USER_PICKS.has(key);
               if (!isUser && userColIndex !== -1 && columns[userColIndex] && columns[userColIndex].contains(el)) {
                 isUser = true;
               }
@@ -176,7 +156,7 @@
               };
               if (isUser) {
                 myRosterKeys.add(key);
-                knownUserPicksMap.set(key, pickObj);
+                KNOWN_USER_PICKS.set(key, pickObj);
               }
               picks.push(pickObj);
             }
@@ -188,24 +168,27 @@
         }
       }
 
-      // 2. Main Draft Room View (Board Modal Closed)
+      // =========================================================================
+      // 2. MAIN DRAFT ROOM VIEW (Board Closed)
+      // =========================================================================
 
-      // Step A: Scan User Roster Sidebar (strictly right side, exclude Queue & ADP cards)
+      // Step A: Scan Right Sidebar for User Roster
       const allTextNodes = document.querySelectorAll('p, span, div, li, tr, h1, h2, h3, h4, h5, h6, a');
 
       allTextNodes.forEach(el => {
         if (el.children.length > 3) return;
-        if (isQueueOrAvailable(el)) return;
+        if (el.tagName === 'BUTTON' || (el.closest && el.closest('button'))) return;
 
         const text = (el.textContent || '').trim();
         if (!text || text.length < 3 || text.length > 70) return;
         const lowerText = text.toLowerCase();
-        if (lowerText.includes('adp') || lowerText.includes('queue') || lowerText.includes('add to queue')) return;
+        if (lowerText.includes('adp') || lowerText.includes('add to queue')) return;
 
         let rect = null;
         try { rect = el.getBoundingClientRect(); } catch(e) {}
 
-        if (rect && rect.left > (winWidth * 0.55) && rect.top > 80) {
+        // Right sidebar check (user roster)
+        if (rect && rect.left > (winWidth * 0.55) && rect.top > 70) {
           const normText = normalize(text);
           const normNoSuffix = normalizeNoSuffix(text);
           const rawUpper = text.toUpperCase();
@@ -222,20 +205,20 @@
                 team: matched.team,
                 is_user: true
               };
-              knownUserPicksMap.set(key, pickObj);
+              KNOWN_USER_PICKS.set(key, pickObj);
               picks.push(pickObj);
             }
           }
         }
       });
 
-      // Step B: Scan Completed Picks from Board/Ticker/Carousel
+      // Step B: Scan Top Completed Picks Ticker / Carousel / Recent Picks
       const candidateElements = document.querySelectorAll(
         'header div, nav div, [class*="ticker"] div, [class*="Ticker"] div, [class*="carousel"] div, [class*="Carousel"] div, [class*="completed"] div, [class*="recent"] div, [class*="board"] div, [class*="Board"] div, [class*="grid"] div, [class*="Grid"] div, [class*="cell"] div, [class*="Cell"] div, [class*="slot"] div, [class*="Slot"] div, [data-testid*="pick"], [data-testid*="cell"], [data-testid*="ticker"], [data-testid*="recent"]'
       );
 
       candidateElements.forEach(el => {
-        if (isQueueOrAvailable(el)) return;
+        if (el.tagName === 'BUTTON' || (el.closest && el.closest('button'))) return;
         if (el.children.length > 4) return;
 
         const text = (el.textContent || '').trim();
@@ -252,7 +235,7 @@
           const key = normalize(matched.name);
           if (!seenKeys.has(key)) {
             seenKeys.add(key);
-            const isUser = myRosterKeys.has(key) || knownUserPicksMap.has(key);
+            const isUser = myRosterKeys.has(key) || KNOWN_USER_PICKS.has(key);
             picks.push({
               player_name: matched.name,
               position: matched.pos,
